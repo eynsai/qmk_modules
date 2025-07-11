@@ -1,5 +1,9 @@
 {
     "module_name": "High Resolution Drag Scroll",
     "maintainer": "eynsai",
-    "license": "GPL-2.0-or-later"
+    "license": "GPL-2.0-or-later",
+    "keycodes": [
+        {"key": "KC_HIRES_DRAGSCROLL_MO", "aliases": ["KC_DSMO"]},
+        {"key": "KC_HIRES_DRAGSCROLL_TG", "aliases": ["KC_DSTG"]}
+    ]
 }

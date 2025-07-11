@@ -1,0 +1,9 @@
+{
+    "module_name": "Special Arrow Mods",
+    "maintainer": "eynsai",
+    "license": "GPL-2.0-or-later",
+    "keycodes": [
+        {"key": "KC_VSCODE_ADD_CURSOR", "aliases": ["KC_VSAC"]},
+        {"key": "KC_CONDITIONAL_CTRL",  "aliases": ["KC_CCTL"]}
+    ]
+}

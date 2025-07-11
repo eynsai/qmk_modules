@@ -1,0 +1,19 @@
+{
+    "module_name": "Inverse Mouse Keys",
+    "maintainer": "eynsai",
+    "license": "GPL-2.0-or-later",
+    "keycodes": [
+        {"key": "KC_INV_MOUSEKEY_BUTTON_1"},
+        {"key": "KC_INV_MOUSEKEY_BUTTON_2"},
+        {"key": "KC_INV_MOUSEKEY_BUTTON_3"},
+        {"key": "KC_INV_MOUSEKEY_BUTTON_4"},
+        {"key": "KC_INV_MOUSEKEY_BUTTON_5"},
+        {"key": "KC_INV_MOUSEKEY_BUTTON_6"},
+        {"key": "KC_INV_MOUSEKEY_BUTTON_7"},
+        {"key": "KC_INV_MOUSEKEY_BUTTON_8"},
+        {"key": "KC_INV_MOUSEKEY_WHEEL_UP"},
+        {"key": "KC_INV_MOUSEKEY_WHEEL_DOWN"},
+        {"key": "KC_INV_MOUSEKEY_WHEEL_LEFT"},
+        {"key": "KC_INV_MOUSEKEY_WHEEL_RIGHT"}
+    ]
+}

@@ -1,58 +1,15 @@
 // Copyright 2025 Morgan Newell Sun
 // SPDX-License-Identifier: GPL-2.0-or-later
 
+#include "hires_dragscroll.h"
 #include <stdlib.h>
 #include <math.h>
-
+#include "quantum.h"
 #include "host_driver.h"
-#include "pointing_device.h"
 #include "timer.h"
 #include "usb_descriptor_common.h"
 
-#include "hires_dragscroll.h"
-
 ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 1, 0);
-
-// ============================================================================
-// PARAMETERS
-// ============================================================================
-
-// Sensitivity
-#ifndef HIRES_DRAGSCROLL_MULTIPLIER_H
-#    define HIRES_DRAGSCROLL_MULTIPLIER_H 8.0
-#endif  // HIRES_DRAGSCROLL_MULTIPLIER_H
-#ifndef HIRES_DRAGSCROLL_MULTIPLIER_V
-#    define HIRES_DRAGSCROLL_MULTIPLIER_V 8.0
-#endif  // HIRES_DRAGSCROLL_MULTIPLIER_V
-
-// Timings
-#ifndef HIRES_DRAGSCROLL_THROTTLE_MS
-#    define HIRES_DRAGSCROLL_THROTTLE_MS 16
-#endif  // HIRES_DRAGSCROLL_THROTTLE_MS
-#ifndef HIRES_DRAGSCROLL_TIMEOUT_MS
-#    define HIRES_DRAGSCROLL_TIMEOUT_MS 500
-#endif  // HIRES_DRAGSCROLL_TIMEOUT_MS
-
-// Axis snapping thresholds
-#ifndef HIRES_DRAGSCROLL_AXIS_SNAPPING_THRESHOLD
-#    define HIRES_DRAGSCROLL_AXIS_SNAPPING_THRESHOLD 0.25
-#endif  // HIRES_DRAGSCROLL_AXIS_SNAPPING_THRESHOLD
-#ifndef HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO
-#    define HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO 2.0
-#endif  // HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO
-
-// Smoothing amount
-#ifndef HIRES_DRAGSCROLL_SMOOTHING_AMOUNT
-#    define HIRES_DRAGSCROLL_SMOOTHING_AMOUNT 5
-#endif  // HIRES_DRAGSCROLL_SMOOTHING_AMOUNT
-
-// Acceleration curve
-#ifndef HIRES_DRAGSCROLL_ACCELERATION_SCALE
-#    define HIRES_DRAGSCROLL_ACCELERATION_SCALE 500.0
-#endif  // HIRES_DRAGSCROLL_ACCELERATION_SCALE
-#ifndef HIRES_DRAGSCROLL_ACCELERATION_BLEND
-#    define HIRES_DRAGSCROLL_ACCELERATION_BLEND 0.872116
-#endif  // HIRES_DRAGSCROLL_ACCELERATION_BLEND
 
 // ============================================================================
 // RING BUFFERS
@@ -91,7 +48,7 @@ static float ring_buffer_mean(ring_buffer_t* rb) {
 #endif  // HIRES_DRAGSCROLL_SMOOTHING
 
 // ============================================================================
-// MISC
+// STATE
 // ============================================================================
 
 typedef enum {
@@ -99,11 +56,6 @@ typedef enum {
     AXIS_SNAPPING_HORIZONTAL,
     AXIS_SNAPPING_VERTICAL,
 } axis_snapping_state_t;
-
-// ============================================================================
-// STATE
-// ============================================================================
-
 
 bool active = false;
 bool axis_snapping = true;
@@ -134,7 +86,7 @@ float acceleration_const_r;
 #endif  // HIRES_DRAGSCROLL_ACCELERATION
 
 // ============================================================================
-// CORE FUNCTIONALITY
+// INTERNAL FUNCTIONS
 // ============================================================================
 
 static void hires_dragscroll_reset_task(void) {
@@ -152,9 +104,6 @@ static void hires_dragscroll_reset_task(void) {
 }
 
 static report_mouse_t hires_dragscroll_accumulate_task(report_mouse_t mouse_report) {
-    if (!active) {
-        return mouse_report;
-    }
     float delta_h;
     float delta_v;
 
@@ -181,6 +130,7 @@ static report_mouse_t hires_dragscroll_accumulate_task(report_mouse_t mouse_repo
     // zero out the mouse report
     mouse_report.x = 0;
     mouse_report.y = 0;
+    return mouse_report;
 }
 
 static inline void update_modifiers(void) {
@@ -226,9 +176,6 @@ static inline void update_modifiers(void) {
 }
 
 static report_mouse_t hires_dragscroll_scroll_task(report_mouse_t mouse_report) {
-    if (!active) {
-        return mouse_report;
-    }
     float h;
     float v;
 
@@ -346,10 +293,19 @@ static report_mouse_t hires_dragscroll_scroll_task(report_mouse_t mouse_report) 
     rounding_error_v = v - mouse_report.v;
 
     // apply config
+    if (hires_dragscroll_config.invert_vertical) {
+        mouse_report.v *= -1;
+    }
+    if (hires_dragscroll_config.invert_horizontal) {
+        mouse_report.h *= -1;
+    }
     if (hires_dragscroll_config.vertical_wheel_only) {
         mouse_report.v += mouse_report.h;
         mouse_report.h = 0;
     }
+
+    // run user code
+    mouse_report = post_hires_dragscroll_scroll_task_kb(mouse_report);
 
     // return
     return mouse_report;
@@ -373,7 +329,7 @@ void pointing_device_init_hires_dragscroll(void) {
 #endif
 
 report_mouse_t pointing_device_task_hires_dragscroll(report_mouse_t mouse_report) {
-
+    if (!active) return mouse_report;
     // accumulate on every call, but only send a nonzero mouse report periodically
     mouse_report = hires_dragscroll_accumulate_task(mouse_report);
     if (timer_elapsed32(last_scroll_time) < HIRES_DRAGSCROLL_THROTTLE_MS) {
@@ -382,6 +338,25 @@ report_mouse_t pointing_device_task_hires_dragscroll(report_mouse_t mouse_report
     last_scroll_time = timer_read32();
     mouse_report = hires_dragscroll_scroll_task(mouse_report);
     return mouse_report;
+}
+
+bool process_record_hires_dragscroll(uint16_t keycode, keyrecord_t *record) {
+    if (keycode == KC_HIRES_DRAGSCROLL_MO) {
+        if (record->event.pressed) {
+            hires_dragscroll_on();
+        } else {
+            hires_dragscroll_off();
+        }
+        return false;
+    } else if (keycode == KC_HIRES_DRAGSCROLL_TG && record->event.pressed) {
+        if (active) {
+            hires_dragscroll_off();
+        } else {
+            hires_dragscroll_on();
+        }
+        return false;
+    }
+    return true;
 }
 
 // ============================================================================
@@ -401,6 +376,14 @@ __attribute__((weak)) report_mouse_t pre_hires_dragscroll_scroll_task_kb(report_
 }
 
 __attribute__((weak)) report_mouse_t pre_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report) {
+    return mouse_report;
+}
+
+__attribute__((weak)) report_mouse_t post_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report) {
+    return post_hires_dragscroll_scroll_task_user(mouse_report);
+}
+
+__attribute__((weak)) report_mouse_t post_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report) {
     return mouse_report;
 }
 
