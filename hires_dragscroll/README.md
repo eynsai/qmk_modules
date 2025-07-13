@@ -18,8 +18,8 @@ The most useful parameters to know about are:
 
 | Define                                | Default | Description                                                 |
 | ------------------------------------- | ------- | ----------------------------------------------------------- |
-| `HIRES_DRAGSCROLL_MULTIPLIER_H`       | `8.0`   | Horizontal sensitivity. Negative to invert direction.       |
-| `HIRES_DRAGSCROLL_MULTIPLIER_V`       | `8.0`   | Vertical sensitivity. Negative to invert direction.         |
+| `HIRES_DRAGSCROLL_MULTIPLIER_H`       | `0.3`   | Horizontal sensitivity. Negative to invert direction.       |
+| `HIRES_DRAGSCROLL_MULTIPLIER_V`       | `-0.3`   | Vertical sensitivity. Negative to invert direction.         |
 | `HIRES_DRAGSCROLL_SMOOTHING`          | defined | `#undefine` this to disable smoothing.                      |
 | `HIRES_DRAGSCROLL_SMOOTHING_AMOUNT`   | `5`     | Number of samples used for smoothing. Must be at least `1`. |
 | `HIRES_DRAGSCROLL_ACCELERATION`       | defined | `#undefine` this to disable acceleration.                   |

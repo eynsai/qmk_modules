@@ -5,6 +5,8 @@
 #include QMK_KEYBOARD_H
 #include "raw_hid.h"
 
+ASSERT_COMMUNITY_MODULES_MIN_API_VERSION(1, 1, 0);
+
 #ifdef MOUSE_PASSTHROUGH_SENDER
 
 // ============================================================================
@@ -255,6 +257,14 @@ static report_mouse_t accumulated_mouse_report = {0};
 // MODULE API
 // ============================================================================
 
+bool process_record_mouse_passthrough(uint16_t keycode, keyrecord_t *record) {
+    if (record->event.pressed && keycode == KC_RESET_OTHER) {
+        mouse_passthrough_send_reset_command();
+        return false;
+    }
+    return true;
+}
+
 void housekeeping_task_mouse_passthrough(void) {
 
     // we can only send one raw hid message per matrix scan, anything after the first message gets garbled for some reason
@@ -365,6 +375,7 @@ report_mouse_t pointing_device_driver_get_report(report_mouse_t mouse_report) {
 #    endif
     return mouse_report;
 }
+uint16_t pointing_device_driver_get_cpi(void) { return 300; }
 
 // ============================================================================
 // USER API

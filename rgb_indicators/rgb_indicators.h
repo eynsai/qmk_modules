@@ -19,14 +19,14 @@ typedef enum {
 } indicator_transition_t;
 */
 
-typedef struct {
+typedef struct rgb_indicator_state_t {
     bool breathing;           // If true, cycle between colors
     HSV color_a;              // For static, the single color; for breathing, endpoint A
     HSV color_b;              // For breathing, endpoint B
     uint16_t period_ms;       // Breathing period
 } rgb_indicator_state_t;
 
-typedef struct {
+typedef struct rgb_indicator_transition_t {
     HSV accent_color;         // Color to briefly transition through
     uint16_t fade_in_ms;      // Time to lerp to accent
     uint16_t hold_ms;         // Time to hold accent

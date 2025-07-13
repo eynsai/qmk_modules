@@ -1,5 +1,8 @@
 {
     "module_name": "Mouse Passthrough",
     "maintainer": "eynsai",
-    "license": "GPL-2.0-or-later"
+    "license": "GPL-2.0-or-later",
+    "keycodes": [
+        {"key": "KC_RESET_OTHER", "aliases": ["KC_RSTO"]}
+    ]
 }
