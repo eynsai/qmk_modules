@@ -1,0 +1,13 @@
+{
+    "module_name": "Eynsai's Statemachine",
+    "maintainer": "eynsai",
+    "license": "GPL-2.0-or-later",
+    "keycodes": [
+        {"key": "KC_SUPERCTRL", "aliases": ["KC_SCTL"]},
+        {"key": "KC_SUPERALT", "aliases": ["KC_SALT"]},
+        {"key": "KC_SUPERGUI", "aliases": ["KC_SGUI"]},
+        {"key": "KC_BASE"},
+        {"key": "KC_TIMEOUT_EVENT"},
+        {"key": "KC_DRAGSCROLL_EVENT"}
+    ]
+}

@@ -1,0 +1,6 @@
+// Copyright 2025 Morgan Newell Sun
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#define IS_INVERSE_MOUSEKEY(kc) ((kc) >= KC_INV_MOUSEKEY_BUTTON_1 && (kc) <= KC_INV_MOUSEKEY_WHEEL_RIGHT)
+#define IS_INVERSE_MOUSEKEY_BUTTON(kc) ((kc) >= KC_INV_MOUSEKEY_BUTTON_1 && (kc) <= KC_INV_MOUSEKEY_BUTTON_8)
+#define IS_INVERSE_MOUSEKEY_WHEEL(kc) ((kc) >= KC_INV_MOUSEKEY_WHEEL_UP && (kc) <= KC_INV_MOUSEKEY_WHEEL_RIGHT)

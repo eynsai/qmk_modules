@@ -1,0 +1,20 @@
+// Copyright 2025 Morgan Newell Sun
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#pragma once
+
+#ifndef WHEEL_EXTENDED_REPORT
+#    define WHEEL_EXTENDED_REPORT
+#endif
+
+#ifndef POINTING_DEVICE_HIRES_SCROLL_ENABLE
+#    define POINTING_DEVICE_HIRES_SCROLL_ENABLE
+#endif
+
+#ifndef HIRES_DRAGSCROLL_SMOOTHING
+#    define HIRES_DRAGSCROLL_SMOOTHING
+#endif
+
+#ifndef HIRES_DRAGSCROLL_ACCELERATION
+#    define HIRES_DRAGSCROLL_ACCELERATION
+#endif

@@ -1,0 +1,44 @@
+// Copyright 2025 Morgan Newell Sun
+// SPDX-License-Identifier: GPL-2.0-or-later
+
+#if defined(MOUSE_PASSTHROUGH_RECEIVER) && defined(MOUSE_PASSTHROUGH_SENDER)
+#    error "MOUSE_PASSTHROUGH_RECEIVER and MOUSE_PASSTHROUGH_SENDER cannot both be defined!"
+#elif !defined(MOUSE_PASSTHROUGH_RECEIVER) && !defined(MOUSE_PASSTHROUGH_SENDER)
+#    error "You must define MOUSE_PASSTHROUGH_RECEIVER or MOUSE_PASSTHROUGH_SENDER!"
+#endif
+
+#ifndef HUB_CONNECTION_ATTEMPT_INTERVAL
+#    define HUB_CONNECTION_ATTEMPT_INTERVAL 4000
+#endif
+
+#ifndef HUB_CONNECTION_EXPIRY_INTERVAL
+#    define HUB_CONNECTION_EXPIRY_INTERVAL 5000
+#endif
+
+#ifndef MAX_QUEUED_MESSAGES
+#    define MAX_QUEUED_MESSAGES 16
+#endif
+
+#ifndef RAW_HID_HUB_COMMAND_ID
+#    define RAW_HID_HUB_COMMAND_ID 0x27
+#endif
+
+#ifndef QMK_RAW_HID_REPORT_SIZE
+#    define QMK_RAW_HID_REPORT_SIZE 32
+#endif
+
+#ifndef N_UNIQUE_DEVICE_IDS
+#    define N_UNIQUE_DEVICE_IDS 255
+#endif
+
+#ifndef DEVICE_ID_UNASSIGNED
+#    define DEVICE_ID_UNASSIGNED N_UNIQUE_DEVICE_IDS
+#endif
+
+#ifndef DEVICE_ID_HUB
+#    define DEVICE_ID_HUB N_UNIQUE_DEVICE_IDS
+#endif
+
+#ifndef MAX_REGISTERED_DEVICES
+#    define MAX_REGISTERED_DEVICES 30
+#endif
