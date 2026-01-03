@@ -182,6 +182,8 @@ typedef enum fsm_node_t {
 } fsm_node_t;
 
 static fsm_node_t state = FSM_NEUTRAL;
+
+// auxillary state variables
 static keymap_layer_t base_layer = LAYER_WORK;
 static uint8_t composite_oneshot_mod_bits = 0;
 static bool bitwig_mode_is_on = false;
@@ -239,6 +241,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 timer_on(SUPERCTRL_TAPPING_TERM);
                 mouse_passthrough_set_buttons_state(true, true);
                 mouse_passthrough_set_wheel_state(true, true);
+                clear_keyboard_but_mods();
                 return false;
             }
             if (record->event.pressed && keycode == KC_SUPERALT) {
@@ -246,12 +249,14 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 timer_on(SUPERALT_TAPPING_TERM);
                 mouse_passthrough_set_buttons_state(true, true);
                 mouse_passthrough_set_wheel_state(true, true);
+                clear_keyboard_but_mods();
                 layer_on(LAYER_MOVE);
                 return false;
             }
             if (record->event.pressed && keycode == KC_SUPERGUI) {
                 state = FSM_GUI_AMBIGUOUS;
                 timer_on(SUPERGUI_TAPPING_TERM);
+                clear_keyboard_but_mods();
                 layer_on(LAYER_FUNC);
                 return false;
             }

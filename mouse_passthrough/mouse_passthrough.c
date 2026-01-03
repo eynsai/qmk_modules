@@ -168,6 +168,18 @@ void raw_hid_receive(uint8_t* data, uint8_t length) {
         } else {
             send_buttons_on = true;
             send_buttons_off_queued = false;
+
+            // TODO: do I want this?
+            // // proactively send current buttons if necessary
+            // if ((last_buttons_received > 0) && (message_queue_next_empty_offset < sizeof(message_queue))) {
+            //     memset(message_queue + message_queue_next_empty_offset, 0, QMK_RAW_HID_REPORT_SIZE);
+            //     message_queue[message_queue_next_empty_offset + REPORT_OFFSET_COMMAND_ID] = RAW_HID_HUB_COMMAND_ID;
+            //     message_queue[message_queue_next_empty_offset + REPORT_OFFSET_DEVICE_ID] = device_id_remote;
+            //     message_queue[message_queue_next_empty_offset + REPORT_OFFSET_DATA_BUTTONS] = last_buttons_received; 
+            //     message_queue_next_empty_offset += QMK_RAW_HID_REPORT_SIZE;
+            //     last_buttons_sent = mouse.buttons;
+            // }
+
         }
         block_pointer_on = data[REPORT_OFFSET_CONTROL_BLOCK_POINTER];
         block_wheel_on = data[REPORT_OFFSET_CONTROL_BLOCK_WHEEL];
