@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "eynsai_statemachine.h"
+#include "action.h"
+#include "keycodes.h"
 #include QMK_KEYBOARD_H
 #include "quantum.h"
 #include "hires_dragscroll.h"
+#include "pointing_device.h"
 #include "inverse_mousekeys.h"
 #include "mouse_buffer.h"
 #include "mouse_passthrough.h"
@@ -209,8 +212,6 @@ static hires_dragscroll_config_t bitwig_scroll_config = {
 static void transition_to_neutral(void) {
     clear_keyboard();
     hires_dragscroll_off();
-    mouse_passthrough_set_buttons_state(false, false);
-    mouse_passthrough_set_wheel_state(false, false);
     mouse_passthrough_set_pointer_state(false, false);
     dragscroll_detection_off();
     timer_off();
@@ -225,6 +226,11 @@ static void transition_to_neutral(void) {
 // MODULE API
 // ============================================================================
 
+void keyboard_post_init_eynsai_statemachine(void) {
+    mouse_passthrough_set_buttons_state(true, true);
+    mouse_passthrough_set_wheel_state(true, true);
+}
+
 bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
 
     // special case for momentary keycodes, since they're mostly stateless and we don't want them interacting with the statemachine
@@ -237,20 +243,25 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
 
         case FSM_NEUTRAL:
             if (record->event.pressed && keycode == KC_SUPERCTRL) {
-                state = FSM_CTRL_AMBIGUOUS;
-                timer_on(SUPERCTRL_TAPPING_TERM);
-                mouse_passthrough_set_buttons_state(true, true);
-                mouse_passthrough_set_wheel_state(true, true);
-                clear_keyboard_but_mods();
+                if (pointing_device_get_report().buttons > 0) {
+                    state = FSM_CTRL_MOUSE;
+                    register_code(KC_LCTL);
+                } else {
+                    state = FSM_CTRL_AMBIGUOUS;
+                    timer_on(SUPERCTRL_TAPPING_TERM);
+                }
                 return false;
             }
             if (record->event.pressed && keycode == KC_SUPERALT) {
-                state = FSM_ALT_AMBIGUOUS;
-                timer_on(SUPERALT_TAPPING_TERM);
-                mouse_passthrough_set_buttons_state(true, true);
-                mouse_passthrough_set_wheel_state(true, true);
-                clear_keyboard_but_mods();
-                layer_on(LAYER_MOVE);
+                if (pointing_device_get_report().buttons > 0) {
+                    state = FSM_ALT_MOUSE;
+                    register_code(KC_LALT);
+                } else {
+                    state = FSM_ALT_AMBIGUOUS;
+                    timer_on(SUPERALT_TAPPING_TERM);
+                    clear_keyboard_but_mods();
+                    layer_on(LAYER_MOVE);
+                }
                 return false;
             }
             if (record->event.pressed && keycode == KC_SUPERGUI) {
@@ -264,19 +275,16 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 if (base_layer == LAYER_WORK) {
                     state = FSM_BASE_AMBIGUOUS;
                     timer_on(BASE_TAPPING_TERM);
-                } else if (base_layer == LAYER_QWER) {
+                } else {
                     state = FSM_NEUTRAL;
+                    if (base_layer == LAYER_QWER) {
+                        rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_QWER, INDICATOR_STATE_OFF);
+                        layer_off(LAYER_QWER);
+                    } else if (base_layer == LAYER_GAME) {
+                        rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_GAME, INDICATOR_STATE_OFF);
+                        layer_off(LAYER_GAME);
+                    }
                     base_layer = LAYER_WORK;
-                    layer_off(LAYER_QWER);
-                    layer_off(LAYER_GAME);
-                    rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_QWER, INDICATOR_STATE_OFF);
-                    transition_to_neutral();
-                } else if (base_layer == LAYER_GAME) {
-                    state = FSM_NEUTRAL;
-                    base_layer = LAYER_WORK;
-                    layer_off(LAYER_QWER);
-                    layer_off(LAYER_GAME);
-                    rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_GAME, INDICATOR_STATE_OFF);
                     transition_to_neutral();
                 }
                 return false;
@@ -314,6 +322,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             if (!record->event.pressed && keycode == KC_SUPERCTRL) {
                 state = FSM_UTIL_ONESHOT_WAITING;
                 timer_off();
+                clear_keyboard_but_mods();
                 layer_on(LAYER_UTIL);
                 mouse_passthrough_set_pointer_state(true, true);
                 dragscroll_detection_on();
