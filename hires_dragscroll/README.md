@@ -64,15 +64,3 @@ typedef struct hires_dragscroll_config_t {
 In most use cases, you'll probably want/need angle snapping when using high resolution dragscroll.
 However, in certain specialized software (e.g. for art/design), you might not want it.
 In these cases, use `hires_dragscroll_on_without_axis_snapping()`.
-
-### Hook Functions
-
-The following weak functions can be overridden to customize processing:
-
-```c
-report_mouse_t pre_hires_dragscroll_accumulate_task_user(report_mouse_t report);
-report_mouse_t pre_hires_dragscroll_scroll_task_user(report_mouse_t report);
-report_mouse_t post_hires_dragscroll_scroll_task_user(report_mouse_t report);
-```
-
-These functions allow you to process the mouse report before/after dragscroll is applied.
