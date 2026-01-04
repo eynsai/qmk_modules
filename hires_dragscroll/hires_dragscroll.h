@@ -3,7 +3,8 @@
 
 #pragma once
 
-#include "report.h"
+// #include "report.h"
+#include "quantum.h"
 
 typedef struct hires_dragscroll_config_t {
     bool vertical_wheel_only;       // convert horizontal motion to VWHEEL instead of HWHEEL
@@ -17,12 +18,12 @@ typedef struct hires_dragscroll_config_t {
     bool invert_horizontal;         // invert horizontal scrolling direction
 } hires_dragscroll_config_t;
 
-report_mouse_t pre_hires_dragscroll_accumulate_task_kb(report_mouse_t mouse_report);
-report_mouse_t pre_hires_dragscroll_accumulate_task_user(report_mouse_t mouse_report);
-report_mouse_t pre_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report);
-report_mouse_t pre_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report);
-report_mouse_t post_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report);
-report_mouse_t post_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report);
+// report_mouse_t pre_hires_dragscroll_accumulate_task_kb(report_mouse_t mouse_report);
+// report_mouse_t pre_hires_dragscroll_accumulate_task_user(report_mouse_t mouse_report);
+// report_mouse_t pre_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report);
+// report_mouse_t pre_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report);
+// report_mouse_t post_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report);
+// report_mouse_t post_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report);
 void hires_dragscroll_on(void);
 void hires_dragscroll_on_without_axis_snapping(void);
 void hires_dragscroll_on_with_config(hires_dragscroll_config_t);

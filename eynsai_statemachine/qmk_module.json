@@ -8,6 +8,6 @@
         {"key": "KC_SUPERGUI", "aliases": ["KC_SGUI"]},
         {"key": "KC_BASE"},
         {"key": "KC_TIMEOUT_EVENT"},
-        {"key": "KC_DRAGSCROLL_EVENT"}
+        {"key": "KC_MOUSE_WATCHER_EVENT"}
     ]
 }

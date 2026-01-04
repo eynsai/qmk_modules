@@ -5,6 +5,7 @@
 #include <stdlib.h>
 #include <math.h>
 #include "quantum.h"
+#include "report.h"
 #include "host_driver.h"
 #include "timer.h"
 #include "usb_descriptor_common.h"
@@ -52,13 +53,13 @@ static float ring_buffer_mean(ring_buffer_t* rb) {
 // ============================================================================
 
 typedef enum {
-    AXIS_SNAPPING_UNDECIDED = 0,
-    AXIS_SNAPPING_HORIZONTAL,
-    AXIS_SNAPPING_VERTICAL,
-} axis_snapping_state_t;
+    HIRES_DRAGSCROLL_AXIS_SNAPPING_UNDECIDED = 0,
+    HIRES_DRAGSCROLL_AXIS_SNAPPING_HORIZONTAL,
+    HIRES_DRAGSCROLL_AXIS_SNAPPING_VERTICAL,
+} hires_dragscroll_axis_snapping_state_t;
 
-bool active = false;
-bool axis_snapping = true;
+bool hires_dragscroll_active = false;
+bool hires_dragscroll_axis_snapping = true;
 hires_dragscroll_config_t hires_dragscroll_config = {0};
 uint32_t last_movement_time;
 uint32_t last_scroll_time = 0;
@@ -71,8 +72,8 @@ float accumulator_v;
 float rounding_error_h;
 float rounding_error_v;
 
-float axis_snapping_deviation;
-axis_snapping_state_t axis_snapping_state;
+float hires_dragscroll_axis_snapping_deviation;
+hires_dragscroll_axis_snapping_state_t hires_dragscroll_axis_snapping_state;
 
 #ifdef HIRES_DRAGSCROLL_SMOOTHING
 ring_buffer_t smoothing_buffer_h;
@@ -95,8 +96,8 @@ static void hires_dragscroll_reset_task(void) {
     accumulator_v = 0;
     rounding_error_h = 0;
     rounding_error_v = 0;
-    axis_snapping_deviation = 0;
-    axis_snapping_state = AXIS_SNAPPING_UNDECIDED;
+    hires_dragscroll_axis_snapping_deviation = 0;
+    hires_dragscroll_axis_snapping_state = HIRES_DRAGSCROLL_AXIS_SNAPPING_UNDECIDED;
 #ifdef HIRES_DRAGSCROLL_SMOOTHING
     ring_buffer_reset(&smoothing_buffer_h);
     ring_buffer_reset(&smoothing_buffer_v);
@@ -107,8 +108,8 @@ static report_mouse_t hires_dragscroll_accumulate_task(report_mouse_t mouse_repo
     float delta_h;
     float delta_v;
 
-    // run user code
-    mouse_report = pre_hires_dragscroll_accumulate_task_kb(mouse_report);
+    // // run user code
+    // mouse_report = pre_hires_dragscroll_accumulate_task_kb(mouse_report);
 
     // reset drag scroll if the pointing device has been idle for too long
     if (mouse_report.x == 0 && mouse_report.y == 0) {
@@ -134,7 +135,7 @@ static report_mouse_t hires_dragscroll_accumulate_task(report_mouse_t mouse_repo
 }
 
 static inline void update_modifiers(void) {
-    if (axis_snapping_state == AXIS_SNAPPING_VERTICAL) {
+    if (hires_dragscroll_axis_snapping_state == HIRES_DRAGSCROLL_AXIS_SNAPPING_VERTICAL) {
         if (hires_dragscroll_config.ctrl_when_horizontal && !hires_dragscroll_config.ctrl_when_vertical) {
             unregister_code(KC_LCTL);
         }
@@ -153,7 +154,7 @@ static inline void update_modifiers(void) {
         if (hires_dragscroll_config.alt_when_vertical) {
             register_code(KC_LALT);
         }
-    } else if (axis_snapping_state == AXIS_SNAPPING_HORIZONTAL) {
+    } else if (hires_dragscroll_axis_snapping_state == HIRES_DRAGSCROLL_AXIS_SNAPPING_HORIZONTAL) {
         if (hires_dragscroll_config.ctrl_when_vertical && !hires_dragscroll_config.ctrl_when_horizontal) {
             unregister_code(KC_LCTL);
         }
@@ -179,8 +180,8 @@ static report_mouse_t hires_dragscroll_scroll_task(report_mouse_t mouse_report) 
     float h;
     float v;
 
-    // run user code
-    mouse_report = pre_hires_dragscroll_scroll_task_kb(mouse_report);
+    // // run user code
+    // mouse_report = pre_hires_dragscroll_scroll_task_kb(mouse_report);
 
     // apply smoothing
 #ifdef HIRES_DRAGSCROLL_SMOOTHING
@@ -195,38 +196,38 @@ static report_mouse_t hires_dragscroll_scroll_task(report_mouse_t mouse_report) 
     accumulator_v = 0;
 
     // apply axis snapping (force snapping on if non-default modes are used)
-    if (axis_snapping) {
-        switch (axis_snapping_state) {
-            case AXIS_SNAPPING_UNDECIDED:
+    if (hires_dragscroll_axis_snapping) {
+        switch (hires_dragscroll_axis_snapping_state) {
+            case HIRES_DRAGSCROLL_AXIS_SNAPPING_UNDECIDED:
                 // we don't know which axis to snap since the user hasn't moved the pointing device
                 if (fabsf(h) > fabsf(v)) {
                     // snap to horizontal axis
                     v = 0;
-                    axis_snapping_state = AXIS_SNAPPING_HORIZONTAL;
+                    hires_dragscroll_axis_snapping_state = HIRES_DRAGSCROLL_AXIS_SNAPPING_HORIZONTAL;
                     update_modifiers();
                 } else if (fabsf(h) < fabsf(v)) {
                     // snap to vertical axis
                     h = 0;
-                    axis_snapping_state = AXIS_SNAPPING_VERTICAL;
+                    hires_dragscroll_axis_snapping_state = HIRES_DRAGSCROLL_AXIS_SNAPPING_VERTICAL;
                     update_modifiers();
                 }
                 break;
-            case AXIS_SNAPPING_HORIZONTAL:
-                axis_snapping_deviation += v;
-                if (axis_snapping_deviation > 0) {
-                    axis_snapping_deviation -= fabsf(h) * HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO;
-                    axis_snapping_deviation = axis_snapping_deviation < 0 ? 0 : axis_snapping_deviation;
-                } else if (axis_snapping_deviation < 0) {
-                    axis_snapping_deviation += fabsf(h) * HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO;
-                    axis_snapping_deviation = axis_snapping_deviation > 0 ? 0 : axis_snapping_deviation;
+            case HIRES_DRAGSCROLL_AXIS_SNAPPING_HORIZONTAL:
+                hires_dragscroll_axis_snapping_deviation += v;
+                if (hires_dragscroll_axis_snapping_deviation > 0) {
+                    hires_dragscroll_axis_snapping_deviation -= fabsf(h) * HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO;
+                    hires_dragscroll_axis_snapping_deviation = hires_dragscroll_axis_snapping_deviation < 0 ? 0 : hires_dragscroll_axis_snapping_deviation;
+                } else if (hires_dragscroll_axis_snapping_deviation < 0) {
+                    hires_dragscroll_axis_snapping_deviation += fabsf(h) * HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO;
+                    hires_dragscroll_axis_snapping_deviation = hires_dragscroll_axis_snapping_deviation > 0 ? 0 : hires_dragscroll_axis_snapping_deviation;
                 }
-                if (fabsf(axis_snapping_deviation) > HIRES_DRAGSCROLL_AXIS_SNAPPING_THRESHOLD) {
+                if (fabsf(hires_dragscroll_axis_snapping_deviation) > HIRES_DRAGSCROLL_AXIS_SNAPPING_THRESHOLD) {
                     // switch to the vertical axis
                     h = 0;
                     rounding_error_h = 0;
                     rounding_error_v = 0;
-                    axis_snapping_deviation = 0;
-                    axis_snapping_state = AXIS_SNAPPING_VERTICAL;
+                    hires_dragscroll_axis_snapping_deviation = 0;
+                    hires_dragscroll_axis_snapping_state = HIRES_DRAGSCROLL_AXIS_SNAPPING_VERTICAL;
                     update_modifiers();
 #ifdef HIRES_DRAGSCROLL_SMOOTHING
                     ring_buffer_reset(&smoothing_buffer_h);
@@ -236,22 +237,22 @@ static report_mouse_t hires_dragscroll_scroll_task(report_mouse_t mouse_report) 
                     v = 0;
                 }
                 break;
-            case AXIS_SNAPPING_VERTICAL:
-                axis_snapping_deviation += h;
-                if (axis_snapping_deviation > 0) {
-                    axis_snapping_deviation -= fabsf(v) * HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO;
-                    axis_snapping_deviation = axis_snapping_deviation < 0 ? 0 : axis_snapping_deviation;
-                } else if (axis_snapping_deviation < 0) {
-                    axis_snapping_deviation += fabsf(v) * HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO;
-                    axis_snapping_deviation = axis_snapping_deviation > 0 ? 0 : axis_snapping_deviation;
+            case HIRES_DRAGSCROLL_AXIS_SNAPPING_VERTICAL:
+                hires_dragscroll_axis_snapping_deviation += h;
+                if (hires_dragscroll_axis_snapping_deviation > 0) {
+                    hires_dragscroll_axis_snapping_deviation -= fabsf(v) * HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO;
+                    hires_dragscroll_axis_snapping_deviation = hires_dragscroll_axis_snapping_deviation < 0 ? 0 : hires_dragscroll_axis_snapping_deviation;
+                } else if (hires_dragscroll_axis_snapping_deviation < 0) {
+                    hires_dragscroll_axis_snapping_deviation += fabsf(v) * HIRES_DRAGSCROLL_AXIS_SNAPPING_RATIO;
+                    hires_dragscroll_axis_snapping_deviation = hires_dragscroll_axis_snapping_deviation > 0 ? 0 : hires_dragscroll_axis_snapping_deviation;
                 }
-                if (fabsf(axis_snapping_deviation) > HIRES_DRAGSCROLL_AXIS_SNAPPING_THRESHOLD) {
+                if (fabsf(hires_dragscroll_axis_snapping_deviation) > HIRES_DRAGSCROLL_AXIS_SNAPPING_THRESHOLD) {
                     // switch to the horizontal axis
                     v = 0;
                     rounding_error_h = 0;
                     rounding_error_v = 0;
-                    axis_snapping_deviation = 0;
-                    axis_snapping_state = AXIS_SNAPPING_HORIZONTAL;
+                    hires_dragscroll_axis_snapping_deviation = 0;
+                    hires_dragscroll_axis_snapping_state = HIRES_DRAGSCROLL_AXIS_SNAPPING_HORIZONTAL;
                     update_modifiers();
 #ifdef HIRES_DRAGSCROLL_SMOOTHING
                     ring_buffer_reset(&smoothing_buffer_h);
@@ -304,8 +305,8 @@ static report_mouse_t hires_dragscroll_scroll_task(report_mouse_t mouse_report) 
         mouse_report.h = 0;
     }
 
-    // run user code
-    mouse_report = post_hires_dragscroll_scroll_task_kb(mouse_report);
+    // // run user code
+    // mouse_report = post_hires_dragscroll_scroll_task_kb(mouse_report);
 
     // return
     return mouse_report;
@@ -329,7 +330,7 @@ void pointing_device_init_hires_dragscroll(void) {
 #endif
 
 report_mouse_t pointing_device_task_hires_dragscroll(report_mouse_t mouse_report) {
-    if (!active) return mouse_report;
+    if (!hires_dragscroll_active) return mouse_report;
     // accumulate on every call, but only send a nonzero mouse report periodically
     mouse_report = hires_dragscroll_accumulate_task(mouse_report);
     if (timer_elapsed32(last_scroll_time) < HIRES_DRAGSCROLL_THROTTLE_MS) {
@@ -349,7 +350,7 @@ bool process_record_hires_dragscroll(uint16_t keycode, keyrecord_t *record) {
         }
         return false;
     } else if (keycode == KC_HIRES_DRAGSCROLL_TG && record->event.pressed) {
-        if (active) {
+        if (hires_dragscroll_active) {
             hires_dragscroll_off();
         } else {
             hires_dragscroll_on();
@@ -363,64 +364,64 @@ bool process_record_hires_dragscroll(uint16_t keycode, keyrecord_t *record) {
 // USER API
 // ============================================================================
 
-__attribute__((weak)) report_mouse_t pre_hires_dragscroll_accumulate_task_kb(report_mouse_t mouse_report) {
-    return pre_hires_dragscroll_accumulate_task_user(mouse_report);
-}
+// __attribute__((weak)) report_mouse_t pre_hires_dragscroll_accumulate_task_kb(report_mouse_t mouse_report) {
+//     return pre_hires_dragscroll_accumulate_task_user(mouse_report);
+// }
 
-__attribute__((weak)) report_mouse_t pre_hires_dragscroll_accumulate_task_user(report_mouse_t mouse_report) {
-    return mouse_report;
-}
+// __attribute__((weak)) report_mouse_t pre_hires_dragscroll_accumulate_task_user(report_mouse_t mouse_report) {
+//     return mouse_report;
+// }
 
-__attribute__((weak)) report_mouse_t pre_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report) {
-    return pre_hires_dragscroll_scroll_task_user(mouse_report);
-}
+// __attribute__((weak)) report_mouse_t pre_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report) {
+//     return pre_hires_dragscroll_scroll_task_user(mouse_report);
+// }
 
-__attribute__((weak)) report_mouse_t pre_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report) {
-    return mouse_report;
-}
+// __attribute__((weak)) report_mouse_t pre_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report) {
+//     return mouse_report;
+// }
 
-__attribute__((weak)) report_mouse_t post_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report) {
-    return post_hires_dragscroll_scroll_task_user(mouse_report);
-}
+// __attribute__((weak)) report_mouse_t post_hires_dragscroll_scroll_task_kb(report_mouse_t mouse_report) {
+//     return post_hires_dragscroll_scroll_task_user(mouse_report);
+// }
 
-__attribute__((weak)) report_mouse_t post_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report) {
-    return mouse_report;
-}
+// __attribute__((weak)) report_mouse_t post_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report) {
+//     return mouse_report;
+// }
 
 void hires_dragscroll_on(void) {
-    if (active) {
+    if (hires_dragscroll_active) {
         return;
     }
-    active = true;
-    axis_snapping = true;
+    hires_dragscroll_active = true;
+    hires_dragscroll_axis_snapping = true;
     hires_dragscroll_config = (hires_dragscroll_config_t){false, false, false, false, false, false, false};
     hires_dragscroll_reset_task();
 }
 
 void hires_dragscroll_on_without_axis_snapping(void) {
-    if (active) {
+    if (hires_dragscroll_active) {
         return;
     }
-    active = true;
-    axis_snapping = false;
+    hires_dragscroll_active = true;
+    hires_dragscroll_axis_snapping = false;
     hires_dragscroll_config = (hires_dragscroll_config_t){false, false, false, false, false, false, false};
     hires_dragscroll_reset_task();
 }
 
 void hires_dragscroll_on_with_config(hires_dragscroll_config_t config) {
-    if (active) {
+    if (hires_dragscroll_active) {
         return;
     }
-    active = true;
-    axis_snapping = true;
+    hires_dragscroll_active = true;
+    hires_dragscroll_axis_snapping = true;
     hires_dragscroll_config = config;
     hires_dragscroll_reset_task();
 }
 
 void hires_dragscroll_off(void) {
-    active = false;
+    hires_dragscroll_active = false;
 }
 
 bool is_hires_dragscroll_on(void) {
-    return active;
+    return hires_dragscroll_active;
 }

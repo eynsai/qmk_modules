@@ -6,12 +6,15 @@
 #include "keycodes.h"
 #include QMK_KEYBOARD_H
 #include "quantum.h"
+#include "simple_timer.h"
+#include "mouse_watcher.h"
 #include "hires_dragscroll.h"
 #include "pointing_device.h"
 #include "inverse_mousekeys.h"
 #include "mouse_buffer.h"
 #include "mouse_passthrough.h"
 #include "rgb_indicators.h"
+#include "mouse_axis_snapping.h"
 
 #ifdef CONSOLE_ENABLE
 #    include "print.h"
@@ -76,70 +79,23 @@ const rgb_indicator_transition_t rgb_indicator_transitions[] = {
 // EVENT WATCHERS 
 // ============================================================================
 
-static deferred_token timer_token = INVALID_DEFERRED_TOKEN;
-static bool timer_callback_is_active = false;
-static uint32_t timer_callback_return_value = 0;
-
-uint32_t timer_callback(uint32_t trigger_time, void *cb_arg) {
+keyrecord_t make_dummy_record(void) {
     keyrecord_t dummy_record = {0};
     dummy_record.event.key.row = 0;
     dummy_record.event.key.col = 0;
     dummy_record.event.pressed = false;
     dummy_record.event.time = timer_read32();
-    timer_token = INVALID_DEFERRED_TOKEN;
-    timer_callback_is_active = true;
-    timer_callback_return_value = 0;
+    return dummy_record;
+}
+
+void simple_timer_callback(void) {
+    keyrecord_t dummy_record = make_dummy_record();
     process_record_eynsai_statemachine(KC_TIMEOUT_EVENT, &dummy_record);
-    timer_callback_is_active = false;
-    return timer_callback_return_value;
 }
 
-void timer_on(uint32_t delay_ms) {
-    if (timer_callback_is_active) {
-        timer_callback_return_value = delay_ms;
-    } else if (timer_token == INVALID_DEFERRED_TOKEN) {
-        timer_token = defer_exec(delay_ms, timer_callback, NULL);
-    } else {
-        extend_deferred_exec(timer_token, delay_ms);
-    }
-}
-
-void timer_off(void) {
-    if (timer_callback_is_active) {
-        timer_callback_return_value = 0;
-    } else if (timer_token != INVALID_DEFERRED_TOKEN) {
-        cancel_deferred_exec(timer_token);
-        timer_token = INVALID_DEFERRED_TOKEN;
-    }
-}
-
-static bool dragscroll_detection_active = false;
-static uint32_t dragscroll_detection_accumulator = 0;
-
-void dragscroll_detection_on(void) {
-    dragscroll_detection_active = true;
-    dragscroll_detection_accumulator = 0;
-}
-
-void dragscroll_detection_off(void) {
-    dragscroll_detection_active = false;
-    dragscroll_detection_accumulator = 0;
-}
-
-report_mouse_t post_hires_dragscroll_scroll_task_user(report_mouse_t mouse_report) {
-    if (dragscroll_detection_active) {
-        dragscroll_detection_accumulator += (uint32_t)(abs(mouse_report.h) + abs(mouse_report.v));
-        if (dragscroll_detection_accumulator >= DRAGSCROLL_DETECTION_DEADZONE) {
-            keyrecord_t dummy_record = {0};
-            dummy_record.event.key.row = 0;
-            dummy_record.event.key.col = 0;
-            dummy_record.event.pressed = false;
-            dummy_record.event.time = timer_read32();
-            process_record_eynsai_statemachine(KC_DRAGSCROLL_EVENT, &dummy_record);
-            dragscroll_detection_off();
-        }
-    }
-    return mouse_report;
+void mouse_watcher_callback(void) {
+    keyrecord_t dummy_record = make_dummy_record();
+    process_record_eynsai_statemachine(KC_MOUSE_WATCHER_EVENT, &dummy_record);
 }
 
 // ============================================================================
@@ -165,15 +121,11 @@ typedef enum fsm_node_t {
     FSM_ALT_HELD,
     FSM_MOVE_MOMENTARY,
     FSM_ALT_MOUSE,
-    // FSM_ALT_ONESHOT_WAITING,
-    // FSM_ALT_ONESHOT_ACTIVE,
 
     // supergui
     FSM_GUI_AMBIGUOUS,
     FSM_GUI_HELD,
     FSM_FUNC_MOMENTARY,
-    // FSM_GUI_ONESHOT_WAITING,
-    // FSM_GUI_ONESHOT_ACTIVE,
 
     // composite oneshot
     FSM_COMPOSITE_ONESHOT_WAITING,
@@ -198,7 +150,7 @@ static bool bitwig_mode_is_on = false;
 #define IS_MODIFIABLE_KEY(kc) ((((kc) & 0xE0FF) >= KC_A && ((kc) & 0xE0FF) <= KC_F24))  // || ((((kc) & 0xE0FF) >= KC_LEFT_CTRL && ((kc) & 0xE0FF) <= KC_RIGHT_GUI)))
 #define IS_SHIFT_KEY(kc) ((kc) == KC_LSFT || (kc) == KC_RSFT)
 #define IS_SUPER_KEY(kc) ((kc) >= KC_SUPERCTRL && (kc) <= KC_SUPERGUI)
-#define IS_STATEMACHINE_KEY(kc) ((kc) >= KC_SUPERCTRL && (kc) <= KC_DRAGSCROLL_EVENT)
+#define IS_STATEMACHINE_KEY(kc) ((kc) >= KC_SUPERCTRL && (kc) <= KC_MOUSE_WATCHER_EVENT)
 #define IS_SYNTHETIC_KEY(kc) (IS_INVERSE_MOUSEKEY((kc)) || IS_STATEMACHINE_KEY((kc)))
 
 static hires_dragscroll_config_t bitwig_scroll_config = {
@@ -213,13 +165,25 @@ static void transition_to_neutral(void) {
     clear_keyboard();
     hires_dragscroll_off();
     mouse_passthrough_set_pointer_state(false, false);
-    dragscroll_detection_off();
-    timer_off();
+    mouse_watcher_off();
+    simple_timer_off();
     layer_off(LAYER_UTIL);
     layer_off(LAYER_MOVE);
     layer_off(LAYER_FUNC);
     state = FSM_NEUTRAL;
     composite_oneshot_mod_bits = 0;
+}
+
+static void bitwig_mode_on(void) {
+    bitwig_mode_is_on = true;
+    rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_BITWIG, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+}
+
+static void bitwig_mode_off(void) {
+    bitwig_mode_is_on = false;
+    mouse_axis_snapping_off();
+    mouse_passthrough_set_pointer_state(false, false);
+    rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_NEUTRAL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
 }
 
 // ============================================================================
@@ -237,7 +201,20 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
     if (IS_QK_MOMENTARY(keycode)) return true;
 
     // special case for shift, since there are virtually no scenarios where we want to block or remap it
-    if (IS_SHIFT_KEY(keycode)) return true;
+    if (IS_SHIFT_KEY(keycode)) {
+        if (!bitwig_mode_is_on) {
+            return true;
+        } else {
+            if (record->event.pressed) {
+                mouse_axis_snapping_on();
+                mouse_passthrough_set_pointer_state(true, true);
+            } else {
+                mouse_axis_snapping_off();
+                mouse_passthrough_set_pointer_state(false, false);
+            }
+            return false;
+        }
+    } 
 
     switch (state) {
 
@@ -248,7 +225,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                     register_code(KC_LCTL);
                 } else {
                     state = FSM_CTRL_AMBIGUOUS;
-                    timer_on(SUPERCTRL_TAPPING_TERM);
+                    simple_timer_on(SUPERCTRL_TAPPING_TERM);
                 }
                 return false;
             }
@@ -258,7 +235,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                     register_code(KC_LALT);
                 } else {
                     state = FSM_ALT_AMBIGUOUS;
-                    timer_on(SUPERALT_TAPPING_TERM);
+                    simple_timer_on(SUPERALT_TAPPING_TERM);
                     clear_keyboard_but_mods();
                     layer_on(LAYER_MOVE);
                 }
@@ -266,7 +243,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             }
             if (record->event.pressed && keycode == KC_SUPERGUI) {
                 state = FSM_GUI_AMBIGUOUS;
-                timer_on(SUPERGUI_TAPPING_TERM);
+                simple_timer_on(SUPERGUI_TAPPING_TERM);
                 clear_keyboard_but_mods();
                 layer_on(LAYER_FUNC);
                 return false;
@@ -274,7 +251,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             if (record->event.pressed && keycode == KC_BASE) {
                 if (base_layer == LAYER_WORK) {
                     state = FSM_BASE_AMBIGUOUS;
-                    timer_on(BASE_TAPPING_TERM);
+                    simple_timer_on(BASE_TAPPING_TERM);
                 } else {
                     state = FSM_NEUTRAL;
                     if (base_layer == LAYER_QWER) {
@@ -298,13 +275,13 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
         case FSM_CTRL_AMBIGUOUS:
             if (record->event.pressed && IS_MODIFIABLE_KEY(keycode)) {
                 state = FSM_CTRL_MODIFIER;
-                timer_off();
+                simple_timer_off();
                 register_code(KC_LCTL);
                 return true;
             }
             if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
                 state = FSM_CTRL_MOUSE;
-                timer_off();
+                simple_timer_off();
                 register_code(KC_LCTL);
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
@@ -315,17 +292,17 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 if (bitwig_mode_is_on) {
                     register_code(KC_LALT);
                 }
-                timer_off();
+                simple_timer_off();
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
             }
             if (!record->event.pressed && keycode == KC_SUPERCTRL) {
                 state = FSM_UTIL_ONESHOT_WAITING;
-                timer_off();
+                simple_timer_off();
                 clear_keyboard_but_mods();
                 layer_on(LAYER_UTIL);
                 mouse_passthrough_set_pointer_state(true, true);
-                dragscroll_detection_on();
+                mouse_watcher_on(DRAGSCROLL_DETECTION_DEADZONE);
                 if (bitwig_mode_is_on) {
                     hires_dragscroll_on_with_config(bitwig_scroll_config);
                 } else {
@@ -336,7 +313,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             }
             if (keycode == KC_TIMEOUT_EVENT) {
                 state = FSM_CTRL_HELD;
-                timer_on(BITWIG_TAPPING_TERM);
+                simple_timer_on(BITWIG_TAPPING_TERM);
                 return false;
             }
             if (record->event.pressed && IS_SUPER_KEY(keycode)) {
@@ -348,13 +325,13 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
         case FSM_CTRL_HELD:
             if (record->event.pressed && IS_MODIFIABLE_KEY(keycode)) {
                 state = FSM_CTRL_MODIFIER;
-                timer_off();
+                simple_timer_off();
                 register_code(KC_LCTL);
                 return true;
             }
             if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
                 state = FSM_CTRL_MOUSE;
-                timer_off();
+                simple_timer_off();
                 register_code(KC_LCTL);
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
@@ -365,17 +342,15 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 if (bitwig_mode_is_on) {
                     register_code(KC_LALT);
                 }
-                timer_off();
+                simple_timer_off();
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
             }
             if (keycode == KC_TIMEOUT_EVENT) {
                 if (bitwig_mode_is_on) {
-                    bitwig_mode_is_on = false;
-                    rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_NEUTRAL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+                    bitwig_mode_off();
                 } else {
-                    bitwig_mode_is_on = true;
-                    rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_BITWIG, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+                    bitwig_mode_on();
                 }
                 transition_to_neutral();
                 return false;
@@ -424,12 +399,12 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
         case FSM_UTIL_ONESHOT_WAITING:
             if (record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) {
                 state = FSM_UTIL_ONESHOT_ACTIVE;
-                dragscroll_detection_off();
+                mouse_watcher_off();
                 return true;
             }
-            if (keycode == KC_DRAGSCROLL_EVENT) {
+            if (keycode == KC_MOUSE_WATCHER_EVENT) {
                 state = FSM_DRAGSCROLL;
-                dragscroll_detection_off();
+                mouse_watcher_off();
                 layer_off(LAYER_UTIL);
                 return false;
             }
@@ -442,7 +417,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 state = FSM_COMPOSITE_ONESHOT_WAITING;
                 hires_dragscroll_off();
                 mouse_passthrough_set_pointer_state(false, false);
-                dragscroll_detection_off();
+                mouse_watcher_off();
                 layer_off(LAYER_UTIL);
                 if (keycode == KC_SUPERALT) {
                     composite_oneshot_mod_bits = MOD_BIT(KC_LCTL) | MOD_BIT(KC_LALT);
@@ -488,7 +463,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
         case FSM_ALT_AMBIGUOUS:
             if ((record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) || IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
                 state = FSM_MOVE_MOMENTARY;
-                timer_off();
+                simple_timer_off();
                 if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
                     tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
                     return false;
@@ -498,7 +473,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             }
             if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
                 state = FSM_ALT_MOUSE;
-                timer_off();
+                simple_timer_off();
                 layer_off(LAYER_MOVE);
                 register_code(KC_LALT);
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
@@ -506,7 +481,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             }
             if (!record->event.pressed && keycode == KC_SUPERALT) {
                 state = FSM_COMPOSITE_ONESHOT_WAITING;
-                timer_off();
+                simple_timer_off();
                 layer_off(LAYER_MOVE);
                 composite_oneshot_mod_bits = MOD_BIT(KC_LALT);
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_ALT, INDICATOR_STATE_ONESHOT);
@@ -591,12 +566,12 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
         case FSM_GUI_AMBIGUOUS:
             if (record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) {
                 state = FSM_FUNC_MOMENTARY;
-                timer_off();
+                simple_timer_off();
                 return true;
             }
             if (!record->event.pressed && keycode == KC_SUPERGUI) {
                 state = FSM_COMPOSITE_ONESHOT_WAITING;
-                timer_off();
+                simple_timer_off();
                 layer_off(LAYER_FUNC);
                 composite_oneshot_mod_bits = MOD_BIT(KC_LGUI);
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_GUI, INDICATOR_STATE_ONESHOT);
