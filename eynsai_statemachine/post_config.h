@@ -13,9 +13,6 @@
 #ifndef BASE_TAPPING_TERM
 #    define BASE_TAPPING_TERM 800
 #endif
-#ifndef BITWIG_TAPPING_TERM
-#    define BITWIG_TAPPING_TERM 2500
-#endif
 
 #ifndef DRAGSCROLL_DETECTION_DEADZONE
 #    define DRAGSCROLL_DETECTION_DEADZONE 50
@@ -40,6 +37,9 @@
 #ifndef COLOR_CTRL
 #    define COLOR_CTRL {170, 255, RGBLIGHT_LIMIT_VAL}
 #endif
+#ifndef COLOR_SHIFT
+#    define COLOR_SHIFT {180, 255, RGBLIGHT_LIMIT_VAL}
+#endif
 #ifndef COLOR_ALT
 #    define COLOR_ALT {80, 255, RGBLIGHT_LIMIT_VAL}
 #endif
@@ -53,7 +53,7 @@
 #    define COLOR_GAME {190, 255, RGBLIGHT_LIMIT_VAL}
 #endif
 #ifndef COLOR_BITWIG
-#    define COLOR_BITWIG {8, 255, RGBLIGHT_LIMIT_VAL}
+#    define COLOR_BITWIG {240, 255, RGBLIGHT_LIMIT_VAL}
 #endif
 #ifndef TIMING_TO
 #    define TIMING_TO .fade_in_ms = 50, .hold_ms = 50, .fade_out_ms = 500

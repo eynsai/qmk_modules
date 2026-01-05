@@ -4,8 +4,10 @@
     "license": "GPL-2.0-or-later",
     "keycodes": [
         {"key": "KC_SUPERCTRL", "aliases": ["KC_SCTL"]},
+        {"key": "KC_SUPERSHIFT", "aliases": ["KC_SSFT"]},
         {"key": "KC_SUPERALT", "aliases": ["KC_SALT"]},
         {"key": "KC_SUPERGUI", "aliases": ["KC_SGUI"]},
+        {"key": "KC_BITWIG", "aliases": ["KC_BWIG"]},
         {"key": "KC_BASE"},
         {"key": "KC_TIMEOUT_EVENT"},
         {"key": "KC_MOUSE_WATCHER_EVENT"}

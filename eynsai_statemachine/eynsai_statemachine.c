@@ -3,6 +3,7 @@
 
 #include "eynsai_statemachine.h"
 #include "action.h"
+#include "community_modules.h"
 #include "keycodes.h"
 #include QMK_KEYBOARD_H
 #include "quantum.h"
@@ -34,11 +35,13 @@ typedef enum indicator_state_t {
 
 typedef enum indicator_transition_t {
     INDICATOR_TRANSITION_TO_CTRL = 0,
+    INDICATOR_TRANSITION_TO_SHIFT,
     INDICATOR_TRANSITION_TO_ALT,
     INDICATOR_TRANSITION_TO_GUI,
     INDICATOR_TRANSITION_TO_QWER,
     INDICATOR_TRANSITION_TO_GAME,
     INDICATOR_TRANSITION_FROM_CTRL,
+    INDICATOR_TRANSITION_FROM_SHIFT,
     INDICATOR_TRANSITION_FROM_ALT,
     INDICATOR_TRANSITION_FROM_GUI,
     INDICATOR_TRANSITION_FROM_QWER,
@@ -46,6 +49,7 @@ typedef enum indicator_transition_t {
     INDICATOR_TRANSITION_FROM_MULTIPLE,
     INDICATOR_TRANSITION_FLASH_NEUTRAL,
     INDICATOR_TRANSITION_FLASH_CTRL,
+    INDICATOR_TRANSITION_FLASH_SHIFT,
     INDICATOR_TRANSITION_FLASH_ALT,
     INDICATOR_TRANSITION_FLASH_GUI,
     INDICATOR_TRANSITION_FLASH_BITWIG,
@@ -58,11 +62,13 @@ const rgb_indicator_state_t rgb_indicator_states[] = {
 };
 const rgb_indicator_transition_t rgb_indicator_transitions[] = {
     [INDICATOR_TRANSITION_TO_CTRL] = { .accent_color = COLOR_CTRL, TIMING_TO },
+    [INDICATOR_TRANSITION_TO_SHIFT] = { .accent_color = COLOR_SHIFT, TIMING_TO },
     [INDICATOR_TRANSITION_TO_ALT] = { .accent_color = COLOR_ALT, TIMING_TO },
     [INDICATOR_TRANSITION_TO_GUI] = { .accent_color = COLOR_GUI, TIMING_TO },
     [INDICATOR_TRANSITION_TO_QWER] = { .accent_color = COLOR_QWER, TIMING_TO },
     [INDICATOR_TRANSITION_TO_GAME] = { .accent_color = COLOR_GAME, TIMING_TO },
     [INDICATOR_TRANSITION_FROM_CTRL] = { .accent_color = COLOR_CTRL, TIMING_FROM },
+    [INDICATOR_TRANSITION_FROM_SHIFT] = { .accent_color = COLOR_SHIFT, TIMING_FROM },
     [INDICATOR_TRANSITION_FROM_ALT] = { .accent_color = COLOR_ALT, TIMING_FROM },
     [INDICATOR_TRANSITION_FROM_GUI] = { .accent_color = COLOR_GUI, TIMING_FROM },
     [INDICATOR_TRANSITION_FROM_QWER] = { .accent_color = COLOR_QWER, TIMING_FROM },
@@ -70,6 +76,7 @@ const rgb_indicator_transition_t rgb_indicator_transitions[] = {
     [INDICATOR_TRANSITION_FROM_MULTIPLE] = { .accent_color = COLOR_ONESHOT_MIDPOINT, TIMING_FROM },
     [INDICATOR_TRANSITION_FLASH_NEUTRAL] = { .accent_color = COLOR_NEUTRAL, TIMING_FLASH },
     [INDICATOR_TRANSITION_FLASH_CTRL] = { .accent_color = COLOR_CTRL, TIMING_FLASH },
+    [INDICATOR_TRANSITION_FLASH_SHIFT] = { .accent_color = COLOR_SHIFT, TIMING_FLASH },
     [INDICATOR_TRANSITION_FLASH_ALT] = { .accent_color = COLOR_ALT, TIMING_FLASH },
     [INDICATOR_TRANSITION_FLASH_GUI] = { .accent_color = COLOR_GUI, TIMING_FLASH },
     [INDICATOR_TRANSITION_FLASH_BITWIG] = { .accent_color = COLOR_BITWIG, TIMING_FLASH },
@@ -108,19 +115,24 @@ typedef enum fsm_node_t {
     FSM_NEUTRAL = 0,
     
     // superctrl
-    FSM_CTRL_AMBIGUOUS,
+    FSM_CTRL_TAPPED,
     FSM_CTRL_HELD,
-    FSM_CTRL_MODIFIER,
-    FSM_CTRL_MOUSE,
+    FSM_CTRL_REGISTERED,
     FSM_UTIL_ONESHOT_WAITING,
     FSM_UTIL_ONESHOT_ACTIVE,
     FSM_DRAGSCROLL,
 
+    // supershift
+    FSM_SHIFT_HELD,
+    FSM_SHIFT_REGISTERED,
+    FSM_MOUSE_AXIS_SNAPPING,
+    FSM_CTRL_SHIFT_REGISTERED,
+
     // superalt
-    FSM_ALT_AMBIGUOUS,
+    FSM_ALT_TAPPED,
     FSM_ALT_HELD,
+    FSM_ALT_REGISTERED,
     FSM_MOVE_MOMENTARY,
-    FSM_ALT_MOUSE,
 
     // supergui
     FSM_GUI_AMBIGUOUS,
@@ -147,11 +159,8 @@ static bool bitwig_mode_is_on = false;
 // HELPERS
 // ============================================================================
 
-#define IS_MODIFIABLE_KEY(kc) ((((kc) & 0xE0FF) >= KC_A && ((kc) & 0xE0FF) <= KC_F24))  // || ((((kc) & 0xE0FF) >= KC_LEFT_CTRL && ((kc) & 0xE0FF) <= KC_RIGHT_GUI)))
-#define IS_SHIFT_KEY(kc) ((kc) == KC_LSFT || (kc) == KC_RSFT)
-#define IS_SUPER_KEY(kc) ((kc) >= KC_SUPERCTRL && (kc) <= KC_SUPERGUI)
 #define IS_STATEMACHINE_KEY(kc) ((kc) >= KC_SUPERCTRL && (kc) <= KC_MOUSE_WATCHER_EVENT)
-#define IS_SYNTHETIC_KEY(kc) (IS_INVERSE_MOUSEKEY((kc)) || IS_STATEMACHINE_KEY((kc)))
+#define IS_MODIFIABLE_KEY(kc) ((((kc) & 0xE0FF) >= KC_A && ((kc) & 0xE0FF) <= KC_F24))
 
 static hires_dragscroll_config_t bitwig_scroll_config = {
     .vertical_wheel_only = true,
@@ -164,6 +173,7 @@ static hires_dragscroll_config_t bitwig_scroll_config = {
 static void transition_to_neutral(void) {
     clear_keyboard();
     hires_dragscroll_off();
+    mouse_axis_snapping_off();
     mouse_passthrough_set_pointer_state(false, false);
     mouse_watcher_off();
     simple_timer_off();
@@ -186,6 +196,10 @@ static void bitwig_mode_off(void) {
     rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_NEUTRAL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
 }
 
+static void bitwig_mode_toggle(void) {
+    if (bitwig_mode_is_on) {bitwig_mode_off(); } else { bitwig_mode_on(); }
+}
+
 // ============================================================================
 // MODULE API
 // ============================================================================
@@ -197,48 +211,48 @@ void keyboard_post_init_eynsai_statemachine(void) {
 
 bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
 
-    // special case for momentary keycodes, since they're mostly stateless and we don't want them interacting with the statemachine
+    // special case for momentary keycodes
     if (IS_QK_MOMENTARY(keycode)) return true;
 
-    // special case for shift, since there are virtually no scenarios where we want to block or remap it
-    if (IS_SHIFT_KEY(keycode)) {
-        if (!bitwig_mode_is_on) {
-            return true;
-        } else {
-            if (record->event.pressed) {
-                mouse_axis_snapping_on();
-                mouse_passthrough_set_pointer_state(true, true);
-            } else {
-                mouse_axis_snapping_off();
-                mouse_passthrough_set_pointer_state(false, false);
-            }
-            return false;
-        }
-    } 
-
+    // main statemachine
     switch (state) {
 
         case FSM_NEUTRAL:
-            if (record->event.pressed && keycode == KC_SUPERCTRL) {
-                if (pointing_device_get_report().buttons > 0) {
-                    state = FSM_CTRL_MOUSE;
-                    register_code(KC_LCTL);
-                } else {
-                    state = FSM_CTRL_AMBIGUOUS;
-                    simple_timer_on(SUPERCTRL_TAPPING_TERM);
-                }
+            if (record->event.pressed && keycode == KC_SUPERCTRL && pointing_device_get_report().buttons == 0) {
+                state = FSM_CTRL_TAPPED;
+                simple_timer_on(SUPERCTRL_TAPPING_TERM);
                 return false;
             }
-            if (record->event.pressed && keycode == KC_SUPERALT) {
-                if (pointing_device_get_report().buttons > 0) {
-                    state = FSM_ALT_MOUSE;
-                    register_code(KC_LALT);
-                } else {
-                    state = FSM_ALT_AMBIGUOUS;
-                    simple_timer_on(SUPERALT_TAPPING_TERM);
-                    clear_keyboard_but_mods();
-                    layer_on(LAYER_MOVE);
-                }
+            if (record->event.pressed && keycode == KC_SUPERCTRL && pointing_device_get_report().buttons > 0) {
+                state = FSM_CTRL_REGISTERED;
+                register_code(KC_LEFT_CTRL);
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_SUPERSHIFT && pointing_device_get_report().buttons == 0) {
+                state = FSM_SHIFT_HELD;
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_SUPERSHIFT && pointing_device_get_report().buttons > 0 && !bitwig_mode_is_on) {
+                state = FSM_SHIFT_REGISTERED;
+                register_code(KC_LEFT_SHIFT);
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_SUPERSHIFT && pointing_device_get_report().buttons > 0 && bitwig_mode_is_on) {
+                state = FSM_MOUSE_AXIS_SNAPPING;
+                mouse_axis_snapping_on();
+                mouse_passthrough_set_pointer_state(true, true);
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_SUPERALT && pointing_device_get_report().buttons == 0) {
+                state = FSM_ALT_TAPPED;
+                simple_timer_on(SUPERALT_TAPPING_TERM);
+                clear_keyboard_but_mods();
+                layer_on(LAYER_MOVE);
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_SUPERALT && pointing_device_get_report().buttons > 0) {
+                state = FSM_ALT_REGISTERED;
+                register_code(KC_LEFT_ALT);
                 return false;
             }
             if (record->event.pressed && keycode == KC_SUPERGUI) {
@@ -248,50 +262,59 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 layer_on(LAYER_FUNC);
                 return false;
             }
-            if (record->event.pressed && keycode == KC_BASE) {
-                if (base_layer == LAYER_WORK) {
-                    state = FSM_BASE_AMBIGUOUS;
-                    simple_timer_on(BASE_TAPPING_TERM);
-                } else {
-                    state = FSM_NEUTRAL;
-                    if (base_layer == LAYER_QWER) {
-                        rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_QWER, INDICATOR_STATE_OFF);
-                        layer_off(LAYER_QWER);
-                    } else if (base_layer == LAYER_GAME) {
-                        rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_GAME, INDICATOR_STATE_OFF);
-                        layer_off(LAYER_GAME);
-                    }
-                    base_layer = LAYER_WORK;
-                    transition_to_neutral();
-                }
+            if (record->event.pressed && keycode == KC_BASE && base_layer == LAYER_WORK) {
+                state = FSM_BASE_AMBIGUOUS;
+                simple_timer_on(BASE_TAPPING_TERM);
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_BASE && base_layer == LAYER_QWER) {
+                state = FSM_NEUTRAL;
+                base_layer = LAYER_WORK;
+                rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_QWER, INDICATOR_STATE_OFF);
+                layer_off(LAYER_QWER);
+                transition_to_neutral();
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_BASE && base_layer == LAYER_GAME) {
+                state = FSM_NEUTRAL;
+                base_layer = LAYER_WORK;
+                rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_GAME, INDICATOR_STATE_OFF);
+                layer_off(LAYER_GAME);
+                transition_to_neutral();
                 return false;
             }
             return true;
-
+            
         // --------------------------------------------------------------------
         // SUPERCTRL
         // --------------------------------------------------------------------
 
-        case FSM_CTRL_AMBIGUOUS:
+        case FSM_CTRL_TAPPED:
+            if (record->event.pressed && (keycode == KC_SUPERALT || keycode == KC_SUPERGUI)) {
+                transition_to_neutral();
+                return process_record_eynsai_statemachine(keycode, record);
+            }
+            if (keycode == KC_TIMEOUT_EVENT) {
+                state = FSM_CTRL_HELD;
+                return false;
+            }
             if (record->event.pressed && IS_MODIFIABLE_KEY(keycode)) {
-                state = FSM_CTRL_MODIFIER;
+                state = FSM_CTRL_REGISTERED;
                 simple_timer_off();
-                register_code(KC_LCTL);
+                register_code(KC_LEFT_CTRL);
                 return true;
             }
-            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
-                state = FSM_CTRL_MOUSE;
+            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) || (IS_INVERSE_MOUSEKEY_WHEEL(keycode) && !bitwig_mode_is_on)) {
+                state = FSM_CTRL_REGISTERED;
                 simple_timer_off();
-                register_code(KC_LCTL);
+                register_code(KC_LEFT_CTRL);
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
             }
-            if (record->event.pressed && IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                state = FSM_CTRL_MOUSE;
-                register_code(KC_LCTL);
-                if (bitwig_mode_is_on) {
-                    register_code(KC_LALT);
-                }
+            if (IS_INVERSE_MOUSEKEY_WHEEL(keycode) && bitwig_mode_is_on) {
+                state = FSM_CTRL_REGISTERED;
+                register_code(KC_LEFT_CTRL);
+                register_code(KC_LEFT_ALT);
                 simple_timer_off();
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
@@ -299,105 +322,92 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             if (!record->event.pressed && keycode == KC_SUPERCTRL) {
                 state = FSM_UTIL_ONESHOT_WAITING;
                 simple_timer_off();
-                clear_keyboard_but_mods();
+                clear_keyboard();
                 layer_on(LAYER_UTIL);
                 mouse_passthrough_set_pointer_state(true, true);
                 mouse_watcher_on(DRAGSCROLL_DETECTION_DEADZONE);
-                if (bitwig_mode_is_on) {
-                    hires_dragscroll_on_with_config(bitwig_scroll_config);
-                } else {
-                    hires_dragscroll_on();
-                }
+                if (bitwig_mode_is_on) { hires_dragscroll_on_with_config(bitwig_scroll_config); } else { hires_dragscroll_on(); }
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_CTRL, INDICATOR_STATE_ONESHOT);
                 return false;
-            }
-            if (keycode == KC_TIMEOUT_EVENT) {
-                state = FSM_CTRL_HELD;
-                simple_timer_on(BITWIG_TAPPING_TERM);
-                return false;
-            }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
-                transition_to_neutral();
-                return process_record_eynsai_statemachine(keycode, record);
             }
             return false;
 
         case FSM_CTRL_HELD:
+            if (!record->event.pressed && keycode == KC_SUPERCTRL) {
+                transition_to_neutral();
+                return false;
+            }
+            if (record->event.pressed && (keycode == KC_SUPERALT || keycode == KC_SUPERGUI)) {
+                transition_to_neutral();
+                return process_record_eynsai_statemachine(keycode, record);
+            }
             if (record->event.pressed && IS_MODIFIABLE_KEY(keycode)) {
-                state = FSM_CTRL_MODIFIER;
-                simple_timer_off();
-                register_code(KC_LCTL);
+                state = FSM_CTRL_REGISTERED;
+                register_code(KC_LEFT_CTRL);
                 return true;
             }
-            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
-                state = FSM_CTRL_MOUSE;
-                simple_timer_off();
-                register_code(KC_LCTL);
+            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) || (IS_INVERSE_MOUSEKEY_WHEEL(keycode) && !bitwig_mode_is_on)) {
+                state = FSM_CTRL_REGISTERED;
+                register_code(KC_LEFT_CTRL);
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
             }
-            if (record->event.pressed && IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                state = FSM_CTRL_MOUSE;
-                register_code(KC_LCTL);
-                if (bitwig_mode_is_on) {
-                    register_code(KC_LALT);
-                }
-                simple_timer_off();
+            if (IS_INVERSE_MOUSEKEY_WHEEL(keycode) && bitwig_mode_is_on) {
+                state = FSM_CTRL_REGISTERED;
+                register_code(KC_LEFT_CTRL);
+                register_code(KC_LEFT_ALT);
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
             }
-            if (keycode == KC_TIMEOUT_EVENT) {
-                if (bitwig_mode_is_on) {
-                    bitwig_mode_off();
-                } else {
-                    bitwig_mode_on();
-                }
-                transition_to_neutral();
+            if (record->event.pressed && keycode == KC_SUPERSHIFT) {
+                state = FSM_CTRL_SHIFT_REGISTERED;
+                register_code(KC_LEFT_CTRL);
+                register_code(KC_LEFT_SHIFT);
                 return false;
-            }
-            if (!record->event.pressed && keycode == KC_SUPERCTRL) {
-                transition_to_neutral();
-                return false;
-            }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
-                transition_to_neutral();
-                return process_record_eynsai_statemachine(keycode, record);
             }
             return false;
 
-        case FSM_CTRL_MODIFIER:
-            if (IS_MODIFIABLE_KEY(keycode)) {
+        case FSM_CTRL_REGISTERED:
+            if (IS_MODIFIABLE_KEY(keycode) || IS_INVERSE_MOUSEKEY(keycode)) {
                 return true;
             }
             if (!record->event.pressed && keycode == KC_SUPERCTRL) {
                 transition_to_neutral();
                 return false;
             }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
+            if (record->event.pressed && (keycode == KC_SUPERALT || keycode == KC_SUPERGUI)) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
             }
-            return false;
-
-        case FSM_CTRL_MOUSE:
-            if (IS_MODIFIABLE_KEY(keycode)) {
-                return true;
-            }
-            if (IS_INVERSE_MOUSEKEY(keycode)) {
-                return true;
-            }
-            if (!record->event.pressed && keycode == KC_SUPERCTRL) {
-                transition_to_neutral();
+            if (record->event.pressed && keycode == KC_SUPERSHIFT) {
+                state = FSM_CTRL_SHIFT_REGISTERED;
+                register_code(KC_LEFT_SHIFT);
                 return false;
-            }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
-                transition_to_neutral();
-                return process_record_eynsai_statemachine(keycode, record);
             }
             return false;
 
         case FSM_UTIL_ONESHOT_WAITING:
-            if (record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) {
+
+            // NOTE: opportunity to do something with these; they're pretty ergonomic
+            // if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
+            //     return false;
+            // }
+            // if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
+            //     return false;
+            // }
+
+            if (record->event.pressed && keycode == KC_SUPERCTRL) {
+                rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+                transition_to_neutral();
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_BITWIG) {
+                bitwig_mode_toggle();
+                // rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+                transition_to_neutral();
+                return false;
+            }
+            if (record->event.pressed && !IS_INVERSE_MOUSEKEY(keycode) && !IS_STATEMACHINE_KEY(keycode)) {
                 state = FSM_UTIL_ONESHOT_ACTIVE;
                 mouse_watcher_off();
                 return true;
@@ -408,22 +418,20 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 layer_off(LAYER_UTIL);
                 return false;
             }
-            if (record->event.pressed && keycode == KC_SUPERCTRL) {
-                rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
-                transition_to_neutral();
-                return false;
-            }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
+            if (record->event.pressed && (keycode == KC_SUPERSHIFT || keycode == KC_SUPERALT || keycode == KC_SUPERGUI)) {
                 state = FSM_COMPOSITE_ONESHOT_WAITING;
                 hires_dragscroll_off();
                 mouse_passthrough_set_pointer_state(false, false);
                 mouse_watcher_off();
                 layer_off(LAYER_UTIL);
-                if (keycode == KC_SUPERALT) {
-                    composite_oneshot_mod_bits = MOD_BIT(KC_LCTL) | MOD_BIT(KC_LALT);
+                if (keycode == KC_SUPERSHIFT) {
+                    composite_oneshot_mod_bits = MOD_BIT(KC_LEFT_CTRL) | MOD_BIT(KC_LEFT_SHIFT);
+                    rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_SHIFT, INDICATOR_STATE_ONESHOT);
+                } else if (keycode == KC_SUPERALT) {
+                    composite_oneshot_mod_bits = MOD_BIT(KC_LEFT_CTRL) | MOD_BIT(KC_LEFT_ALT);
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_ALT, INDICATOR_STATE_ONESHOT);
-                } else {
-                    composite_oneshot_mod_bits = MOD_BIT(KC_LCTL) | MOD_BIT(KC_LGUI);
+                } else if (keycode == KC_SUPERGUI) {
+                    composite_oneshot_mod_bits = MOD_BIT(KC_LEFT_CTRL) | MOD_BIT(KC_LEFT_GUI);
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_GUI, INDICATOR_STATE_ONESHOT);
                 }
                 return false;
@@ -439,6 +447,11 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             return false;
 
         case FSM_DRAGSCROLL:
+            if (record->event.pressed && !IS_INVERSE_MOUSEKEY(keycode) && !IS_STATEMACHINE_KEY(keycode)) {
+                rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+                transition_to_neutral();
+                return false;
+            }
             if (record->event.pressed && keycode == KC_SUPERCTRL) {
                 state = FSM_CTRL_HELD;
                 hires_dragscroll_off();
@@ -446,12 +459,89 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
                 return false;
             }
-            if (IS_SYNTHETIC_KEY(keycode)) {
+            return false;
+
+        // --------------------------------------------------------------------
+        // SUPERSHIFT
+        // --------------------------------------------------------------------
+
+        case FSM_SHIFT_HELD:
+            if (!record->event.pressed && keycode == KC_SUPERSHIFT) {
+                transition_to_neutral();
                 return false;
             }
-            if (record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) {
-                rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+            if (record->event.pressed && IS_MODIFIABLE_KEY(keycode)) {
+                state = FSM_SHIFT_REGISTERED;
+                register_code(KC_LEFT_SHIFT);
+                return true;
+            }
+            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode) && !bitwig_mode_is_on) || IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
+                state = FSM_SHIFT_REGISTERED;
+                register_code(KC_LEFT_SHIFT);
+                mouse_buffer_on(MOUSE_BUFFER_DURATION);
+                return true;
+            }
+            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode) && bitwig_mode_is_on) {
+                state = FSM_MOUSE_AXIS_SNAPPING;
+                mouse_axis_snapping_on();
+                mouse_passthrough_set_pointer_state(true, true);
+                mouse_buffer_on(MOUSE_BUFFER_DURATION);
+                return true;
+            }
+            if (record->event.pressed && keycode == KC_SUPERCTRL) {
+                state = FSM_CTRL_SHIFT_REGISTERED;
+                register_code(KC_LEFT_CTRL);
+                register_code(KC_LEFT_SHIFT);
+                return false;
+            }
+            return false;
+
+        case FSM_SHIFT_REGISTERED:
+            if (IS_MODIFIABLE_KEY(keycode) || IS_INVERSE_MOUSEKEY(keycode)) {
+                return true;
+            }
+            if (!record->event.pressed && keycode == KC_SUPERSHIFT) {
                 transition_to_neutral();
+                return false;
+            }
+            if (record->event.pressed && keycode == KC_SUPERCTRL) {
+                state = FSM_CTRL_SHIFT_REGISTERED;
+                register_code(KC_LEFT_CTRL);
+                return false;
+            }
+            return false;
+
+        case FSM_MOUSE_AXIS_SNAPPING:
+            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
+                return true;
+            }
+            if (!record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode) && pointing_device_get_report().buttons != 0) {
+                return true;
+            }
+            if (!record->event.pressed && keycode == KC_SUPERSHIFT) {
+                transition_to_neutral();
+                return false;
+            }
+            if (!record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode) && pointing_device_get_report().buttons == 0) {
+                state = FSM_SHIFT_HELD;
+                mouse_axis_snapping_off();
+                mouse_passthrough_set_pointer_state(false, false);
+                return true;
+            }
+            return false;
+
+        case FSM_CTRL_SHIFT_REGISTERED:
+            if (IS_MODIFIABLE_KEY(keycode) || IS_INVERSE_MOUSEKEY(keycode)) {
+                return true;
+            }
+            if (!record->event.pressed && keycode == KC_SUPERSHIFT) {
+                state = FSM_CTRL_REGISTERED;
+                unregister_code(KC_LEFT_SHIFT);
+                return false;
+            }
+            if (!record->event.pressed && keycode == KC_SUPERCTRL) {
+                state = FSM_SHIFT_REGISTERED;
+                unregister_code(KC_LEFT_CTRL);
                 return false;
             }
             return false;
@@ -460,89 +550,90 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
         // SUPERALT
         // --------------------------------------------------------------------
 
-        case FSM_ALT_AMBIGUOUS:
-            if ((record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) || IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                state = FSM_MOVE_MOMENTARY;
-                simple_timer_off();
-                if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                    tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
-                    return false;
-                } else {
-                    return true;
-                }
-            }
-            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
-                state = FSM_ALT_MOUSE;
-                simple_timer_off();
-                layer_off(LAYER_MOVE);
-                register_code(KC_LALT);
-                mouse_buffer_on(MOUSE_BUFFER_DURATION);
-                return true;
-            }
-            if (!record->event.pressed && keycode == KC_SUPERALT) {
-                state = FSM_COMPOSITE_ONESHOT_WAITING;
-                simple_timer_off();
-                layer_off(LAYER_MOVE);
-                composite_oneshot_mod_bits = MOD_BIT(KC_LALT);
-                rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_ALT, INDICATOR_STATE_ONESHOT);
-                return false;
+        case FSM_ALT_TAPPED:
+            if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERGUI)) {
+                transition_to_neutral();
+                return process_record_eynsai_statemachine(keycode, record);
             }
             if (keycode == KC_TIMEOUT_EVENT) {
                 state = FSM_ALT_HELD;
                 return false;
             }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
-                transition_to_neutral();
-                return process_record_eynsai_statemachine(keycode, record);
+            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
+                state = FSM_ALT_REGISTERED;
+                simple_timer_off();
+                layer_off(LAYER_MOVE);
+                register_code(KC_LEFT_ALT);
+                mouse_buffer_on(MOUSE_BUFFER_DURATION);
+                return true;
+            }
+            if (record->event.pressed && !IS_INVERSE_MOUSEKEY(keycode) && !IS_STATEMACHINE_KEY(keycode)) {
+                state = FSM_MOVE_MOMENTARY;
+                simple_timer_off();
+                return true;
+            }
+            if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
+                state = FSM_MOVE_MOMENTARY;
+                simple_timer_off();
+                tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
+                return false;
+            }
+            if (!record->event.pressed && keycode == KC_SUPERALT) {
+                state = FSM_COMPOSITE_ONESHOT_WAITING;
+                simple_timer_off();
+                layer_off(LAYER_MOVE);
+                composite_oneshot_mod_bits = MOD_BIT(KC_LEFT_ALT);
+                rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_ALT, INDICATOR_STATE_ONESHOT);
+                return false;
             }
             return false;
 
         case FSM_ALT_HELD:
-            if ((record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) || IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                state = FSM_MOVE_MOMENTARY;
-                if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                    tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
-                    return false;
-                } else {
-                    return true;
-                }
-            }
-            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
-                state = FSM_ALT_MOUSE;
-                layer_off(LAYER_MOVE);
-                register_code(KC_LALT);
-                mouse_buffer_on(MOUSE_BUFFER_DURATION);
-                return true;
-            }
             if (!record->event.pressed && keycode == KC_SUPERALT) {
                 transition_to_neutral();
                 return false;
             }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
+            if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERGUI)) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
+            }
+            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
+                state = FSM_ALT_REGISTERED;
+                layer_off(LAYER_MOVE);
+                register_code(KC_LEFT_ALT);
+                mouse_buffer_on(MOUSE_BUFFER_DURATION);
+                return true;
+            }
+            if (record->event.pressed && !IS_INVERSE_MOUSEKEY(keycode) && !IS_STATEMACHINE_KEY(keycode)) {
+                state = FSM_MOVE_MOMENTARY;
+                return true;
+            }
+            if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
+                state = FSM_MOVE_MOMENTARY;
+                tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
+                return false;
             }
             return false;
 
         case FSM_MOVE_MOMENTARY:
-            if (!IS_SYNTHETIC_KEY(keycode)) {
+            if (!IS_INVERSE_MOUSEKEY(keycode) && !IS_STATEMACHINE_KEY(keycode)) {
                 return true;
             }
             if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                    tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
+                tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
                 return false;
             }
             if (!record->event.pressed && keycode == KC_SUPERALT) {
                 transition_to_neutral();
                 return false;
             }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
+            if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERGUI)) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
             }
             return false;
 
-        case FSM_ALT_MOUSE:
+        case FSM_ALT_REGISTERED:
             if (IS_MODIFIABLE_KEY(keycode)) {
                 return true;
             }
@@ -553,7 +644,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 transition_to_neutral();
                 return false;
             }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
+            if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERGUI)) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
             }
@@ -564,7 +655,15 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
         // --------------------------------------------------------------------
 
         case FSM_GUI_AMBIGUOUS:
-            if (record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) {
+            if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERALT)) {
+                transition_to_neutral();
+                return process_record_eynsai_statemachine(keycode, record);
+            }
+            if (keycode == KC_TIMEOUT_EVENT) {
+                state = FSM_GUI_HELD;
+                return false;
+            }
+            if (record->event.pressed && !IS_INVERSE_MOUSEKEY(keycode) && !IS_STATEMACHINE_KEY(keycode)) {
                 state = FSM_FUNC_MOMENTARY;
                 simple_timer_off();
                 return true;
@@ -573,44 +672,36 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 state = FSM_COMPOSITE_ONESHOT_WAITING;
                 simple_timer_off();
                 layer_off(LAYER_FUNC);
-                composite_oneshot_mod_bits = MOD_BIT(KC_LGUI);
+                composite_oneshot_mod_bits = MOD_BIT(KC_LEFT_GUI);
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_GUI, INDICATOR_STATE_ONESHOT);
                 return false;
-            }
-            if (keycode == KC_TIMEOUT_EVENT) {
-                state = FSM_GUI_HELD;
-                return false;
-            }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
-                transition_to_neutral();
-                return process_record_eynsai_statemachine(keycode, record);
             }
             return false;
 
         case FSM_GUI_HELD:
-            if (record->event.pressed && !IS_SYNTHETIC_KEY(keycode)) {
-                state = FSM_FUNC_MOMENTARY;
-                return true;
-            }
             if (!record->event.pressed && keycode == KC_SUPERGUI) {
                 transition_to_neutral();
                 return false;
             }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
+            if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERALT)) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
+            }
+            if (record->event.pressed && !IS_INVERSE_MOUSEKEY(keycode) && !IS_STATEMACHINE_KEY(keycode)) {
+                state = FSM_FUNC_MOMENTARY;
+                return true;
             }
             return false;
 
         case FSM_FUNC_MOMENTARY:
-            if (!IS_SYNTHETIC_KEY(keycode)) {
+            if (!IS_INVERSE_MOUSEKEY(keycode) && !IS_STATEMACHINE_KEY(keycode)) {
                 return true;
             }
             if (!record->event.pressed && keycode == KC_SUPERGUI) {
                 transition_to_neutral();
                 return false;
             }
-            if (record->event.pressed && IS_SUPER_KEY(keycode)) {
+            if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERALT)) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
             }
@@ -627,10 +718,10 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 return true;
             }
             if (record->event.pressed && keycode == KC_SUPERCTRL) {
-                if ((composite_oneshot_mod_bits & MOD_BIT(KC_LCTL)) == 0) {
-                    composite_oneshot_mod_bits |= MOD_BIT(KC_LCTL);
+                if ((composite_oneshot_mod_bits & MOD_BIT(KC_LEFT_CTRL)) == 0) {
+                    composite_oneshot_mod_bits |= MOD_BIT(KC_LEFT_CTRL);
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_CTRL, INDICATOR_STATE_ONESHOT);
-                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LCTL)) {
+                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LEFT_CTRL)) {
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
                     transition_to_neutral();
                 } else {
@@ -639,11 +730,27 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 }
                 return false;
             }
+            if (record->event.pressed && keycode == KC_SUPERSHIFT) {
+                if ((composite_oneshot_mod_bits & MOD_BIT(KC_LEFT_SHIFT)) == 0) {
+                    composite_oneshot_mod_bits |= MOD_BIT(KC_LEFT_SHIFT);
+                    rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_SHIFT, INDICATOR_STATE_ONESHOT);
+
+                // NOTE: won't ever enter this clause
+                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LEFT_SHIFT)) {
+                    rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_SHIFT, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+                    transition_to_neutral();
+
+                } else {
+                    rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_MULTIPLE, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
+                    transition_to_neutral();
+                }
+                return false;
+            }
             if (record->event.pressed && keycode == KC_SUPERALT) {
-                if ((composite_oneshot_mod_bits & MOD_BIT(KC_LALT)) == 0) {
-                    composite_oneshot_mod_bits |= MOD_BIT(KC_LALT);
+                if ((composite_oneshot_mod_bits & MOD_BIT(KC_LEFT_ALT)) == 0) {
+                    composite_oneshot_mod_bits |= MOD_BIT(KC_LEFT_ALT);
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_ALT, INDICATOR_STATE_ONESHOT);
-                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LALT)) {
+                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LEFT_ALT)) {
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_ALT, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
                     transition_to_neutral();
                 } else {
@@ -653,10 +760,10 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 return false;
             }
             if (record->event.pressed && keycode == KC_SUPERGUI) {
-                if ((composite_oneshot_mod_bits & MOD_BIT(KC_LGUI)) == 0) {
-                    composite_oneshot_mod_bits |= MOD_BIT(KC_LGUI);
+                if ((composite_oneshot_mod_bits & MOD_BIT(KC_LEFT_GUI)) == 0) {
+                    composite_oneshot_mod_bits |= MOD_BIT(KC_LEFT_GUI);
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_GUI, INDICATOR_STATE_ONESHOT);
-                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LGUI)) {
+                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LEFT_GUI)) {
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_GUI, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
                     transition_to_neutral();
                 } else {
@@ -669,11 +776,11 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
 
         case FSM_COMPOSITE_ONESHOT_ACTIVE:
             if (!record->event.pressed) {
-                if (composite_oneshot_mod_bits == MOD_BIT(KC_LCTL)) {
+                if (composite_oneshot_mod_bits == MOD_BIT(KC_LEFT_CTRL)) {
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
-                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LALT)) {
+                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LEFT_ALT)) {
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_ALT, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
-                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LGUI)) {
+                } else if (composite_oneshot_mod_bits == MOD_BIT(KC_LEFT_GUI)) {
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_GUI, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
                 } else {
                     rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_MULTIPLE, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
