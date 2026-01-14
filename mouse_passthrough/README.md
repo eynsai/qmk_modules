@@ -1,6 +1,6 @@
 # `mouse_passthrough`
 
-This module implements a system for using haw HID messages, in conjunction with software running on the host PC, to use one QMK pointing device (the "sender") as a pointing device on another QMK device (the "receiver").
+This module implements a system for using raw HID messages, in conjunction with software running on the host PC, to use one QMK pointing device (the "sender") as a pointing device on another QMK device (the "receiver").
 The host PC software can be found [here](https://github.com/eynsai/raw-hid-hub). (Warning: very fragile code.)
 
 The receiver and sender both need to use this module, and must `#define MOUSE_PASSTHROUGH_RECEIVER` and `#define MOUSE_PASSTHROUGH_SENDER`, respectively.
