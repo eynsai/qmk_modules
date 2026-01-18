@@ -330,6 +330,13 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_CTRL, INDICATOR_STATE_ONESHOT);
                 return false;
             }
+            if (record->event.pressed && keycode == KC_SUPERSHIFT) {
+                state = FSM_CTRL_SHIFT_REGISTERED;
+                simple_timer_off();
+                register_code(KC_LEFT_CTRL);
+                register_code(KC_LEFT_SHIFT);
+                return false;
+            }
             return false;
 
         case FSM_CTRL_HELD:
