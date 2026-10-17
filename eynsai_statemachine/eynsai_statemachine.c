@@ -15,7 +15,6 @@
 #include "mouse_buffer.h"
 #include "mouse_passthrough.h"
 #include "rgb_indicators.h"
-#include "mouse_axis_snapping.h"
 
 #ifdef CONSOLE_ENABLE
 #    include "print.h"
@@ -52,7 +51,6 @@ typedef enum indicator_transition_t {
     INDICATOR_TRANSITION_FLASH_SHIFT,
     INDICATOR_TRANSITION_FLASH_ALT,
     INDICATOR_TRANSITION_FLASH_GUI,
-    INDICATOR_TRANSITION_FLASH_BITWIG,
 } indicator_transition_t;
 
 const rgb_indicator_state_t rgb_indicator_states[] = {
@@ -79,7 +77,6 @@ const rgb_indicator_transition_t rgb_indicator_transitions[] = {
     [INDICATOR_TRANSITION_FLASH_SHIFT] = { .accent_color = COLOR_SHIFT, TIMING_FLASH },
     [INDICATOR_TRANSITION_FLASH_ALT] = { .accent_color = COLOR_ALT, TIMING_FLASH },
     [INDICATOR_TRANSITION_FLASH_GUI] = { .accent_color = COLOR_GUI, TIMING_FLASH },
-    [INDICATOR_TRANSITION_FLASH_BITWIG] = { .accent_color = COLOR_BITWIG, TIMING_FLASH },
 };
 
 // ============================================================================
@@ -125,7 +122,6 @@ typedef enum fsm_node_t {
     // supershift
     FSM_SHIFT_HELD,
     FSM_SHIFT_REGISTERED,
-    FSM_MOUSE_AXIS_SNAPPING,
     FSM_CTRL_SHIFT_REGISTERED,
 
     // superalt
@@ -153,7 +149,6 @@ static fsm_node_t state = FSM_NEUTRAL;
 // auxillary state variables
 static keymap_layer_t base_layer = LAYER_WORK;
 static uint8_t composite_oneshot_mod_bits = 0;
-static bool bitwig_mode_is_on = false;
 
 // ============================================================================
 // HELPERS
@@ -162,18 +157,9 @@ static bool bitwig_mode_is_on = false;
 #define IS_STATEMACHINE_KEY(kc) ((kc) >= KC_SUPERCTRL && (kc) <= KC_MOUSE_WATCHER_EVENT)
 #define IS_MODIFIABLE_KEY(kc) ((((kc) & 0xE0FF) >= KC_A && ((kc) & 0xE0FF) <= KC_F24))
 
-static hires_dragscroll_config_t bitwig_scroll_config = {
-    .vertical_wheel_only = true,
-    .shift_when_vertical = true,
-    .shift_when_horizontal = true,
-    .alt_when_horizontal = true,
-    .invert_horizontal = true,
-};
-
 static void transition_to_neutral(void) {
     clear_keyboard();
     hires_dragscroll_off();
-    mouse_axis_snapping_off();
     mouse_passthrough_set_pointer_state(false, false);
     mouse_watcher_off();
     simple_timer_off();
@@ -182,22 +168,6 @@ static void transition_to_neutral(void) {
     layer_off(LAYER_FUNC);
     state = FSM_NEUTRAL;
     composite_oneshot_mod_bits = 0;
-}
-
-static void bitwig_mode_on(void) {
-    bitwig_mode_is_on = true;
-    rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_BITWIG, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
-}
-
-static void bitwig_mode_off(void) {
-    bitwig_mode_is_on = false;
-    mouse_axis_snapping_off();
-    mouse_passthrough_set_pointer_state(false, false);
-    rgb_indicators_start_transition(INDICATOR_TRANSITION_FLASH_NEUTRAL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
-}
-
-static void bitwig_mode_toggle(void) {
-    if (bitwig_mode_is_on) {bitwig_mode_off(); } else { bitwig_mode_on(); }
 }
 
 // ============================================================================
@@ -232,15 +202,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 state = FSM_SHIFT_HELD;
                 return false;
             }
-            if (record->event.pressed && keycode == KC_SUPERSHIFT && pointing_device_get_report().buttons > 0 && !bitwig_mode_is_on) {
+            if (record->event.pressed && keycode == KC_SUPERSHIFT && pointing_device_get_report().buttons > 0) {
                 state = FSM_SHIFT_REGISTERED;
                 register_code(KC_LEFT_SHIFT);
-                return false;
-            }
-            if (record->event.pressed && keycode == KC_SUPERSHIFT && pointing_device_get_report().buttons > 0 && bitwig_mode_is_on) {
-                state = FSM_MOUSE_AXIS_SNAPPING;
-                mouse_axis_snapping_on();
-                mouse_passthrough_set_pointer_state(true, true);
                 return false;
             }
             if (record->event.pressed && keycode == KC_SUPERALT && pointing_device_get_report().buttons == 0) {
@@ -304,18 +268,10 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 register_code(KC_LEFT_CTRL);
                 return true;
             }
-            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) || (IS_INVERSE_MOUSEKEY_WHEEL(keycode) && !bitwig_mode_is_on)) {
+            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) || IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
                 state = FSM_CTRL_REGISTERED;
                 simple_timer_off();
                 register_code(KC_LEFT_CTRL);
-                mouse_buffer_on(MOUSE_BUFFER_DURATION);
-                return true;
-            }
-            if (IS_INVERSE_MOUSEKEY_WHEEL(keycode) && bitwig_mode_is_on) {
-                state = FSM_CTRL_REGISTERED;
-                register_code(KC_LEFT_CTRL);
-                register_code(KC_LEFT_ALT);
-                simple_timer_off();
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
             }
@@ -326,7 +282,7 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 layer_on(LAYER_UTIL);
                 mouse_passthrough_set_pointer_state(true, true);
                 mouse_watcher_on(DRAGSCROLL_DETECTION_DEADZONE);
-                if (bitwig_mode_is_on) { hires_dragscroll_on_with_config(bitwig_scroll_config); } else { hires_dragscroll_on(); }
+                hires_dragscroll_on();
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_CTRL, INDICATOR_STATE_ONESHOT);
                 return false;
             }
@@ -353,16 +309,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 register_code(KC_LEFT_CTRL);
                 return true;
             }
-            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) || (IS_INVERSE_MOUSEKEY_WHEEL(keycode) && !bitwig_mode_is_on)) {
+            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) || IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
                 state = FSM_CTRL_REGISTERED;
                 register_code(KC_LEFT_CTRL);
-                mouse_buffer_on(MOUSE_BUFFER_DURATION);
-                return true;
-            }
-            if (IS_INVERSE_MOUSEKEY_WHEEL(keycode) && bitwig_mode_is_on) {
-                state = FSM_CTRL_REGISTERED;
-                register_code(KC_LEFT_CTRL);
-                register_code(KC_LEFT_ALT);
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
             }
@@ -405,12 +354,6 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
 
             if (record->event.pressed && keycode == KC_SUPERCTRL) {
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
-                transition_to_neutral();
-                return false;
-            }
-            if (record->event.pressed && keycode == KC_BITWIG) {
-                bitwig_mode_toggle();
-                // rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
                 transition_to_neutral();
                 return false;
             }
@@ -482,16 +425,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 register_code(KC_LEFT_SHIFT);
                 return true;
             }
-            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode) && !bitwig_mode_is_on) || IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
+            if ((record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) || IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
                 state = FSM_SHIFT_REGISTERED;
                 register_code(KC_LEFT_SHIFT);
-                mouse_buffer_on(MOUSE_BUFFER_DURATION);
-                return true;
-            }
-            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode) && bitwig_mode_is_on) {
-                state = FSM_MOUSE_AXIS_SNAPPING;
-                mouse_axis_snapping_on();
-                mouse_passthrough_set_pointer_state(true, true);
                 mouse_buffer_on(MOUSE_BUFFER_DURATION);
                 return true;
             }
@@ -515,25 +451,6 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 state = FSM_CTRL_SHIFT_REGISTERED;
                 register_code(KC_LEFT_CTRL);
                 return false;
-            }
-            return false;
-
-        case FSM_MOUSE_AXIS_SNAPPING:
-            if (record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
-                return true;
-            }
-            if (!record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode) && pointing_device_get_report().buttons != 0) {
-                return true;
-            }
-            if (!record->event.pressed && keycode == KC_SUPERSHIFT) {
-                transition_to_neutral();
-                return false;
-            }
-            if (!record->event.pressed && IS_INVERSE_MOUSEKEY_BUTTON(keycode) && pointing_device_get_report().buttons == 0) {
-                state = FSM_SHIFT_HELD;
-                mouse_axis_snapping_off();
-                mouse_passthrough_set_pointer_state(false, false);
-                return true;
             }
             return false;
 

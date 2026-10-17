@@ -52,9 +52,6 @@
 #ifndef COLOR_GAME
 #    define COLOR_GAME {190, 255, RGBLIGHT_LIMIT_VAL}
 #endif
-#ifndef COLOR_BITWIG
-#    define COLOR_BITWIG {240, 255, RGBLIGHT_LIMIT_VAL}
-#endif
 #ifndef TIMING_TO
 #    define TIMING_TO .fade_in_ms = 50, .hold_ms = 50, .fade_out_ms = 500
 #endif
