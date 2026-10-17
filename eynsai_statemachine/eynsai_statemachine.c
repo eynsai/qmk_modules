@@ -293,6 +293,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 register_code(KC_LEFT_SHIFT);
                 return false;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_CTRL_HELD:
@@ -321,6 +324,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 register_code(KC_LEFT_SHIFT);
                 return false;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_CTRL_REGISTERED:
@@ -339,6 +345,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 state = FSM_CTRL_SHIFT_REGISTERED;
                 register_code(KC_LEFT_SHIFT);
                 return false;
+            }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
             }
             return false;
 
@@ -386,6 +395,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 }
                 return false;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_UTIL_ONESHOT_ACTIVE:
@@ -408,6 +420,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 mouse_passthrough_set_pointer_state(false, false);
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_FROM_CTRL, (base_layer == LAYER_WORK ? INDICATOR_STATE_OFF : INDICATOR_STATE_BASE));
                 return false;
+            }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
             }
             return false;
 
@@ -437,6 +452,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 register_code(KC_LEFT_SHIFT);
                 return false;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_SHIFT_REGISTERED:
@@ -451,6 +469,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 state = FSM_CTRL_SHIFT_REGISTERED;
                 register_code(KC_LEFT_CTRL);
                 return false;
+            }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
             }
             return false;
 
@@ -467,6 +488,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 state = FSM_SHIFT_REGISTERED;
                 unregister_code(KC_LEFT_CTRL);
                 return false;
+            }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
             }
             return false;
 
@@ -510,6 +534,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_ALT, INDICATOR_STATE_ONESHOT);
                 return false;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_ALT_HELD:
@@ -537,6 +564,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
                 return false;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_MOVE_MOMENTARY:
@@ -555,6 +585,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_ALT_REGISTERED:
@@ -571,6 +604,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERGUI)) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
+            }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
             }
             return false;
 
@@ -600,6 +636,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_GUI, INDICATOR_STATE_ONESHOT);
                 return false;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_GUI_HELD:
@@ -615,6 +654,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 state = FSM_FUNC_MOMENTARY;
                 return true;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_FUNC_MOMENTARY:
@@ -628,6 +670,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             if (record->event.pressed && (keycode == KC_SUPERCTRL || keycode == KC_SUPERALT)) {
                 transition_to_neutral();
                 return process_record_eynsai_statemachine(keycode, record);
+            }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
             }
             return false;
 
@@ -696,6 +741,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 }
                 return false;
             }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
+            }
             return false;
 
         case FSM_COMPOSITE_ONESHOT_ACTIVE:
@@ -736,6 +784,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 rgb_indicators_start_transition(INDICATOR_TRANSITION_TO_QWER, INDICATOR_STATE_BASE);
                 transition_to_neutral();
                 return false;
+            }
+            if (!record->event.pressed && !IS_STATEMACHINE_KEY(keycode)) {
+                return true;
             }
             return false;
 
