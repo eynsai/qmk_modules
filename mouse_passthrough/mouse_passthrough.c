@@ -371,11 +371,14 @@ void raw_hid_receive(uint8_t* data, uint8_t length) {
         }
 
     } else if (state == MOUSE_PASSTHROUGH_HUB_CONNECTED && data[REPORT_OFFSET_DEVICE_ID] == device_id_remote && data[REPORT_OFFSET_HANDSHAKE] == 39) {
-        // handshake step 4/4: keyboard silently receives mouse response
+        // handshake step 4/4: keyboard receives mouse response and resends its control state, since the mouse reset it in step 3
         state = MOUSE_PASSTHROUGH_REMOTE_CONNECTED;
         device_id_remote = data[REPORT_OFFSET_DEVICE_ID];
+        control_state_changed = true;
     }
 }
+
+bool pointing_device_driver_init(void) { return true; }
 
 report_mouse_t pointing_device_driver_get_report(report_mouse_t mouse_report) {
     memcpy(&mouse_report, &accumulated_mouse_report, sizeof(accumulated_mouse_report));
@@ -387,6 +390,7 @@ report_mouse_t pointing_device_driver_get_report(report_mouse_t mouse_report) {
 #    endif
     return mouse_report;
 }
+
 uint16_t pointing_device_driver_get_cpi(void) { return 300; }
 
 // ============================================================================
