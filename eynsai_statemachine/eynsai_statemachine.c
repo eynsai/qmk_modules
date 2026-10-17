@@ -521,8 +521,10 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 return true;
             }
             if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                state = FSM_MOVE_MOMENTARY;
+                state = FSM_ALT_REGISTERED;
                 simple_timer_off();
+                layer_off(LAYER_MOVE);
+                register_code(KC_LEFT_ALT);
                 tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
                 return false;
             }
@@ -560,7 +562,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 return true;
             }
             if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
-                state = FSM_MOVE_MOMENTARY;
+                state = FSM_ALT_REGISTERED;
+                layer_off(LAYER_MOVE);
+                register_code(KC_LEFT_ALT);
                 tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
                 return false;
             }
@@ -574,6 +578,9 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
                 return true;
             }
             if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
+                state = FSM_ALT_REGISTERED;
+                layer_off(LAYER_MOVE);
+                register_code(KC_LEFT_ALT);
                 tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
                 return false;
             }
@@ -594,8 +601,12 @@ bool process_record_eynsai_statemachine(uint16_t keycode, keyrecord_t *record) {
             if (IS_MODIFIABLE_KEY(keycode)) {
                 return true;
             }
-            if (IS_INVERSE_MOUSEKEY(keycode)) {
+            if (IS_INVERSE_MOUSEKEY_BUTTON(keycode)) {
                 return true;
+            }
+            if (IS_INVERSE_MOUSEKEY_WHEEL(keycode)) {
+                tap_code(keycode == KC_INV_MOUSEKEY_WHEEL_UP ? KC_UP : keycode == KC_INV_MOUSEKEY_WHEEL_DOWN ? KC_DOWN : keycode == KC_INV_MOUSEKEY_WHEEL_LEFT ? KC_LEFT : KC_RIGHT);
+                return false;
             }
             if (!record->event.pressed && keycode == KC_SUPERALT) {
                 transition_to_neutral();
